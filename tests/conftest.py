@@ -23,5 +23,5 @@ def isolated_product_environment(tmp_path, monkeypatch):
     monkeypatch.setattr(socket.socket, "connect", forbidden)
     monkeypatch.setattr(socket, "create_connection", forbidden)
     monkeypatch.setattr(subprocess, "Popen", forbidden)
-    import claude_swap.switcher
-    monkeypatch.setattr(claude_swap.switcher, "ClaudeAccountSwitcher", forbidden)
+    import sessioner.accounts.switcher
+    monkeypatch.setattr(sessioner.accounts.switcher, "ClaudeAccountSwitcher", forbidden)

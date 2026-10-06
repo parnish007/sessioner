@@ -1,6 +1,6 @@
 # Develop Sessioner
 
-Sessioner is a Python product with a terminal interface. Its CLI lives in `src/sessioner`; bundled account components live under `vendor/claude-swap`.
+Sessioner is a Python product with a terminal interface. Its CLI and account components live under `src/sessioner`.
 
 ## Local installation
 
@@ -11,7 +11,7 @@ From the checkout root in PowerShell:
 .\.venv\Scripts\sessioner.exe --help
 ```
 
-Setup creates the local Python 3.13 environment when needed and installs both packages in editable mode. It changes neither global PATH nor the caller's working directory. The root distribution is `sessioner` version `0.1.0`; its console entry point is `sessioner.cli:main`. The bundled account distribution is `claude-swap` version `0.27.0b1`.
+Setup creates the local Python 3.13 environment when needed and installs Sessioner in editable mode. It changes neither global PATH nor the caller's working directory. The distribution is `sessioner` version `0.1.0`; its console entry points are `sessioner.cli:main` and the advanced account command `sessioner.accounts.cli:main`.
 
 The root PowerShell launcher delegates to the product CLI. These are equivalent ways to invoke it:
 
@@ -21,16 +21,15 @@ The root PowerShell launcher delegates to the product CLI. These are equivalent 
 .\.venv\Scripts\python.exe -m sessioner status
 ```
 
-`accounts.ps1` launches advanced account tools. The bundled package also provides `sessioner-accounts`, `cswap`, and `claude-swap` entry points.
+`accounts.ps1` launches the advanced account command.
 
 ## Project boundaries
 
 | Location | Purpose |
 | --- | --- |
 | `src/sessioner/` | Sessioner command routing, guided setup, and readiness messages. |
-| `vendor/claude-swap/src/claude_swap/` | Saved account storage, credential switching, usage, and the quota hook. |
+| `src/sessioner/accounts/` | Saved account storage, credential switching, usage, and the quota hook. |
 | `tests/` | Product behavior tested with isolated account data. |
-| `vendor/claude-swap/tests/` | Account-engine and hook regression tests. |
 | `docs/` | Product guides and verification notes. |
 | `setup.ps1`, `sessioner.ps1`, `accounts.ps1` | Local installation and launchers. |
 
@@ -40,7 +39,7 @@ The hook changes only the account login. Keep transcript access, prompt injectio
 
 ## Local account data
 
-Windows account data is stored under `%USERPROFILE%\.claude-swap-backup`; existing saved accounts use the same location. Credential `.enc` files are base64-encoded, not encrypted. Account exports contain plaintext login secrets. Keep account files and exports private and out of source control.
+Windows account data stays in the existing Claude account backup location. Credential `.enc` files are base64-encoded, not encrypted. Account exports contain plaintext login secrets. Keep account files and exports private and out of source control.
 
 ## Verification
 
@@ -50,12 +49,10 @@ From the checkout root, run the product suite:
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-From the checkout root, enter `vendor/claude-swap` and run the focused account-engine and hook regression suite:
+The account and hook checks run from the checkout root:
 
 ```powershell
-Push-Location .\vendor\claude-swap
-..\..\.venv\Scripts\python.exe -m pytest tests/test_quota_hook.py tests/test_quota_hook_integration.py tests/test_cli.py tests/test_json_output.py tests/test_credentials.py tests/test_paths.py tests/test_claude_locks.py tests/test_add_account_identity.py tests/test_autoswitch.py -n 4 -q
-Pop-Location
+.\.venv\Scripts\python.exe -m pytest tests -n 4 -q
 ```
 
 Product checks use isolated account data. They cover registration of different identities, duplicate-login recovery, existing account stores, command routing, readiness messages, cancellation, account switching, and hook toggles.

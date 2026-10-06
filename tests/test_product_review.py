@@ -7,7 +7,7 @@ import sys
 import pytest
 from rich.console import Console
 
-from claude_swap import quota_hook
+from sessioner.accounts import quota_hook
 from sessioner.cli import main
 from sessioner.service import SessionerService, Snapshot, usage_available
 

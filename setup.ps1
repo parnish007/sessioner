@@ -9,7 +9,7 @@ try {
         & uv venv --python 3.13 .venv
         if ($LASTEXITCODE -ne 0) { throw 'Python environment setup failed.' }
     }
-    & uv pip install --python '.venv\Scripts\python.exe' --link-mode copy --quiet -e '.\vendor\claude-swap' -e '.'
+    & uv pip install --python '.venv\Scripts\python.exe' --link-mode copy --quiet -e '.'
     if ($LASTEXITCODE -ne 0) { throw 'Sessioner installation failed. Check the message above and run setup.ps1 again.' }
     Write-Host ''
     Write-Host 'Sessioner is installed.'

@@ -11,8 +11,8 @@ from pathlib import Path
 import shutil
 from typing import Callable
 
-from claude_swap import paths, quota_hook
-from claude_swap.models import normalize_alias
+from sessioner.accounts import paths, quota_hook
+from sessioner.accounts.models import normalize_alias
 
 
 class SessionerError(Exception):
@@ -102,7 +102,7 @@ class Registration:
 class SessionerService:
     def __init__(self, switcher=None, settings_path: Path | None = None, which: Callable = shutil.which):
         if switcher is None:
-            from claude_swap.switcher import ClaudeAccountSwitcher
+            from sessioner.accounts.switcher import ClaudeAccountSwitcher
             switcher = ClaudeAccountSwitcher()
         self.switcher = switcher
         self.settings_path = Path(settings_path) if settings_path is not None else paths.get_claude_config_home() / "settings.json"
@@ -114,7 +114,7 @@ class SessionerService:
         except SessionerError:
             raise
         except Exception as exc:
-            from claude_swap.exceptions import CredentialError, LockError
+            from sessioner.accounts.exceptions import CredentialError, LockError
             detail = str(exc).lower()
             if "no active claude account" in detail or "no credentials" in detail:
                 raise SessionerError("No usable Claude login was found.", "Use /login in Claude Code, then run sessioner add") from exc
