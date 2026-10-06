@@ -26,6 +26,10 @@ from sessioner.wintray import DesktopInstance, MenuItem, NativeTray, wake_for
 RUNTIME_FILE = "sessioner-desktop.json"
 HEARTBEAT_SECONDS = 5
 HEARTBEAT_MAX_AGE = 20
+# With the watcher off, usage is still re-checked now and then while an account is at its
+# limit, so "quota is available again" can be noticed without anyone opening the dashboard.
+RECOVERY_CHECK_SECONDS = 300
+DASHBOARD_DEBOUNCE_SECONDS = 1.5
 
 
 def supported() -> bool:
@@ -69,6 +73,10 @@ class DesktopController:
         self._watcher_running = False
         self._error = False
         self._started = False
+        self._rendered = False
+        self._last_recovery_check = 0.0
+        self._last_dashboard = float("-inf")
+        self.clock = time.monotonic
         self.worker = threading.Thread(target=self._work, name="Sessioner desktop worker", daemon=True)
         self.http_thread = threading.Thread(target=self._serve, name="Sessioner dashboard", daemon=True)
         self.heartbeat_thread = threading.Thread(target=self._heartbeat, name="Sessioner heartbeat", daemon=True)
@@ -84,7 +92,11 @@ class DesktopController:
 
     def handle(self, action: str) -> None:
         if action == "dashboard":
-            self.open_url(self.server.url)
+            # A double click on the tray icon also arrives as a single click first.
+            now = self.clock()
+            if now - self._last_dashboard >= DASHBOARD_DEBOUNCE_SECONDS:
+                self._last_dashboard = now
+                self.open_url(self.server.url)
             return
         if action == "wake":
             return
@@ -119,12 +131,27 @@ class DesktopController:
             due = watching.get("nextPollAt")
             if enabled and not watching.get("running") and (not _number(due) or time.time() >= due):
                 watching = watcher.tick(interval=60, cancelled=self._stop.is_set)
+            elif not enabled and self._recovery_due():
+                self._last_recovery_check = self.clock()
+                self.service.snapshot(refresh=True, source="desktop")
             if self._stop.is_set():
                 return
             self._watcher_running = enabled
             snapshot = self.service.snapshot(source="desktop")
             self._notify(snapshot.accounts, preferences)
             self._render(snapshot, watching)
+
+    def _recovery_due(self) -> bool:
+        if self.clock() - self._last_recovery_check < RECOVERY_CHECK_SECONDS:
+            return False
+        exhausted = getattr(self.service, "exhausted_slots", None)
+        return bool(exhausted and exhausted())
+
+    def render_fallback(self) -> None:
+        """Before the first status read, or when it fails, the menu still opens the dashboard and quits."""
+        menu = [MenuItem("Action needs attention · open dashboard" if self._error else "Sessioner is starting…"), MenuItem(""),
+                MenuItem("Open dashboard", "dashboard"), MenuItem("Refresh usage", "refresh"), MenuItem(""), MenuItem("Quit Sessioner", "quit")]
+        self.tray.update("Sessioner · open the dashboard for details", menu)
 
     def _notify(self, accounts: list[dict], preferences: dict) -> None:
         for notice in self._notices.poll(self.service.activity(limit=50).get("items", []), accounts,
@@ -154,6 +181,7 @@ class DesktopController:
                                  checked=bool(active and account["number"] == active.get("number"))))
         menu.extend([MenuItem(""), MenuItem("Reset watcher", "watcher", checked=watching.get("enabled") is True), MenuItem("Quit Sessioner", "quit")])
         self.tray.update(f"Sessioner · {name} · Reset {reset_text} · Watcher {watcher_text}", menu)
+        self._rendered = True
 
     def write_heartbeat(self) -> None:
         path = Path(self.service.state_dir) / RUNTIME_FILE
@@ -184,6 +212,8 @@ class DesktopController:
                 self.check()
             except Exception:
                 self._error = True
+                self._rendered = False
+                self.render_fallback()
             try:
                 action = self._actions.get(timeout=5)
             except queue.Empty:
@@ -205,6 +235,7 @@ class DesktopController:
     def start(self, *, open_browser: bool = True) -> None:
         self._started = True
         self.server.on_quit = self.request_stop
+        self.render_fallback()
         self.http_thread.start()
         self.worker.start()
         self.heartbeat_thread.start()
@@ -234,6 +265,25 @@ class DesktopController:
                 path.unlink(missing_ok=True)
         except (OSError, UnicodeError, ValueError):
             pass
+
+
+def launch_detached() -> bool:
+    """Start the tray app in its own windowless process, for a fix button in the dashboard."""
+    if not supported():
+        return False
+    import subprocess
+
+    windowless = Path(sys.executable).with_name("pythonw.exe")
+    executable = windowless if windowless.is_file() else Path(sys.executable)
+    try:
+        subprocess.Popen(
+            [str(executable), "-m", "sessioner.desktop", "--no-open"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True,
+            creationflags=getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+        )
+    except OSError:
+        return False
+    return True
 
 
 def run_desktop(service, *, open_browser: bool = True) -> int:

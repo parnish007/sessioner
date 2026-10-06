@@ -328,18 +328,18 @@ def act(service: SessionerService, route: str, body: object) -> dict:
         elif check == "backup":
             return {"message": "Usage refreshed.", "state": build_state(service, refresh=True)}
         elif check == "watcher":
-            from sessioner.desktop import wake_for
+            from sessioner.desktop import launch_detached, wake_for
+            service.watcher().set_enabled(True)
             desktop = _desktop_state(service)
             if desktop["running"] or service.watcher().status().get("running") is True:
-                service.watcher().set_enabled(True)
                 wake_for(service.state_dir)
-                message = "Reset watcher enabled. Its running status will update when the worker responds."
+                message = "Reset watcher is on. Its status updates in a few seconds."
+            elif not desktop["supported"]:
+                message = f"Reset watcher is on. Run {command_name()} watch to start it."
+            elif launch_detached():
+                message = "Reset watcher is on and the Sessioner tray app is starting."
             else:
-                message = (
-                    f"Run {command_name()} watch to start the enabled watcher."
-                    if not desktop["supported"] else
-                    f"Open the desktop shortcut or run {desktop['command']} to start the enabled watcher."
-                )
+                message = f"Reset watcher is on, but the tray app could not start. Run {desktop['command']}."
         else:
             message = "Open Setup and follow the account or Claude installation steps."
         return {"message": message, "state": build_state(service)}

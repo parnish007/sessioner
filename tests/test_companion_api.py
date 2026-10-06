@@ -31,7 +31,8 @@ def test_state_has_safe_preferences_activity_and_actual_watcher_health(tmp_path)
     assert state["watcher"]["enabled"] is True
     assert state["health"]["watcherRunning"] is False
     assert checks(state)["watcher"]["status"] == "attention"
-    assert checks(state)["watcher"]["fix"]["command"].endswith("desktop")
+    # On Windows the fix starts the tray app instead of asking for a terminal command.
+    assert checks(state)["watcher"]["fix"] == {"action": "watcher", "label": "Start in tray"}
     assert not state["health"]["ready"]  # the automatic hook is not configured yet
 
 
@@ -147,3 +148,26 @@ def test_non_windows_health_offers_the_terminal_watcher(tmp_path, monkeypatch):
     svc.watcher().set_enabled(True)
     state = api.build_state(svc)
     assert checks(state)["watcher"]["fix"]["command"].endswith("watch")
+
+
+def test_watcher_fix_turns_it_on_and_starts_the_tray_when_nothing_runs_it(tmp_path, monkeypatch):
+    api = product_module("sessioner.web.api")
+    desktop = product_module("sessioner.desktop")
+    svc = ready_service(tmp_path)
+    assert checks(api.build_state(svc))["watcher"]["fix"] == {"action": "watcher", "label": "Turn on watcher"}
+    launches = []
+    monkeypatch.setattr(desktop, "launch_detached", lambda: launches.append(1) or True)
+    result = api.act(svc, "/api/health/fix", {"check": "watcher"})
+    assert result["state"]["watcher"]["enabled"] is True and launches == [1]
+    assert "tray app is starting" in result["message"]
+    monkeypatch.setattr(desktop, "launch_detached", lambda: False)
+    assert "could not start" in api.act(svc, "/api/health/fix", {"check": "watcher"})["message"]
+
+
+def test_backup_check_asks_for_a_second_account_before_anything_else(tmp_path):
+    from test_cli import Engine, row, service
+
+    api = product_module("sessioner.web.api")
+    svc = service(tmp_path, Engine([row(1, "a@example.com", "work")], login="a@example.com"))
+    backup = checks(api.build_state(svc))["backup"]
+    assert backup["status"] == "attention" and backup["fix"]["action"] == "setup"

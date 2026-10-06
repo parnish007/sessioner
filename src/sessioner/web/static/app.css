@@ -492,6 +492,10 @@ a.acct-total:hover { border-color: var(--ink); }
 .activity-item.warn .activity-dot { border-color: var(--warn); background: var(--warn); }
 .activity-item.alert .activity-dot { border-color: var(--alert); background: var(--alert); }
 .activity-copy > p:first-child { font-size: 15px; font-weight: 600; }
+.chain .step.ok { color: var(--ok); }
+.chain .step.alert { color: var(--alert); }
+.chain .step.warn { color: var(--warn); }
+.chain .arrow { color: var(--ink-soft); font-weight: 400; }
 .activity-copy > p + p { margin-top: 4px; }
 .activity-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--ink-soft); font-size: 12px; margin-top: 6px; }
 .activity-meta time { font-variant-numeric: tabular-nums; }

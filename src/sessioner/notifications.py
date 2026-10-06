@@ -36,10 +36,9 @@ class NotificationEngine:
     def poll(self, items: list[dict], accounts: list[dict], *, enabled: bool, now: float | None = None) -> list[Notification]:
         now = time.time() if now is None else now
         notices = []
+        batch = [item for item in reversed(items[:50]) if isinstance(item, dict)]
         # Activity is latest-first. Deliver a new batch in chronological order.
-        for item in reversed(items[:50]):
-            if not isinstance(item, dict):
-                continue
+        for position, item in enumerate(batch):
             identity = item.get("id")
             if not isinstance(identity, str) or not identity or len(identity) > 128 or identity in self._seen:
                 continue
@@ -50,6 +49,10 @@ class NotificationEngine:
             origin, target = item.get("from"), item.get("to")
             before, after = account_name(accounts, origin), account_name(accounts, target)
             affected = account_name(accounts, target if isinstance(target, int) and not isinstance(target, bool) and target > 0 else origin)
+            if kind == "switch_failed" and any(
+                later.get("kind") == "switch_confirmed" and later.get("source") == item.get("source") for later in batch[position + 1:]
+            ):
+                continue  # the next candidate took over; the confirmed switch is the news
             if kind == "switch_confirmed":
                 title, body = "Account switched", f"Active login switched from {before} to {after}."
             elif kind == "switch_failed":

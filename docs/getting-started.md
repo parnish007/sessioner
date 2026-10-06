@@ -24,7 +24,7 @@ Sessioner gives you the instructions; you perform the login in Claude. It does n
 
 ## Desktop controls
 
-Open **Switching** for setup health and a timeline of account-switch decisions and results. Each setup problem offers the relevant fix or takes you back to setup. The watcher has separate enabled and running indicators.
+Open **Switching** for setup health and a timeline of account-switch decisions and results. Each setup problem offers the relevant fix or takes you back to setup. **Start in tray** starts the tray app when the watcher is on but nothing is running it. Switch history shows each episode on one line, for example *work exhausted → home selected → Switch confirmed*, and says why when a switch failed. The watcher has separate enabled and running indicators.
 
 Enable the reset watcher here if you want Sessioner to check for available quota in the background. The desktop app starts it while enabled. Closing the browser leaves the desktop app running; use the tray or dashboard's **Quit** to stop it. Opening the shortcut again reopens the same dashboard. Installation does not enable the watcher or start Sessioner at Windows login.
 

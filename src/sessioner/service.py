@@ -218,6 +218,11 @@ class SessionerService:
 
         return ActivityStore(self.state_dir / FILE).read(limit=limit)
 
+    def exhausted_slots(self) -> list[int]:
+        from sessioner.activity import FILE, ActivityStore
+
+        return ActivityStore(self.state_dir / FILE).exhausted_slots()
+
     def record_event(self, kind: str, source: str = "manual", from_slot=None, to_slot=None, reason=None):
         from sessioner.activity import FILE, ActivityStore
 

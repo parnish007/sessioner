@@ -265,3 +265,21 @@ def test_cached_login_observation_clears_after_renewal_and_can_notify_again(tmp_
     engine.rows[0]["usageStatus"] = "relogin_required"
     svc.snapshot()
     assert len([item for item in svc.activity()["items"] if item["kind"] == "login_required"]) == 2
+
+
+def test_hook_explains_a_limit_with_no_usable_backup(tmp_path):
+    engine = three(tmp_path / "store")
+    for slot in (1, 2):
+        engine.rows[slot]["usageAgeSeconds"] = 3600  # out of date, so not a safe target
+    assert quota_hook.rotate_account(EVENT, engine, now=NOW.timestamp()) == {"status": "blocked"}
+    items = make_service(tmp_path).activity()["items"]
+    assert [item["kind"] for item in items[:2]] == ["switch_failed", "quota_exhausted"]
+    assert items[0]["reason"] == "no-available-account" and items[0]["to"] is None
+
+
+def test_exhausted_slots_wait_for_a_measured_recovery(tmp_path):
+    from sessioner.activity import ActivityStore
+
+    store = ActivityStore(tmp_path / "activity.json")
+    store.record("quota_exhausted", source="hook", from_slot=2, reason="quota-exhausted")
+    assert store.exhausted_slots() == [2]

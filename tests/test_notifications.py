@@ -82,3 +82,19 @@ def test_distinct_failed_attempts_are_not_hidden_by_status_throttling():
     policy.poll([], ACCOUNTS, enabled=True, now=0)
     assert len(policy.poll([event("attempt1", "switch_failed")], ACCOUNTS, enabled=True, now=1)) == 1
     assert len(policy.poll([event("attempt2", "switch_failed")], ACCOUNTS, enabled=True, now=2)) == 1
+
+
+def test_a_failed_candidate_followed_by_a_confirmed_switch_only_announces_the_switch():
+    notices = engine()
+    notices.poll([], ACCOUNTS, enabled=True)
+    batch = [event("c", "switch_confirmed", source="hook", target=2), event("b", "switch_failed", source="hook", target=3),
+             event("a", "quota_exhausted", source="hook", target=None)]
+    titles = [notice.title for notice in notices.poll(batch, ACCOUNTS, enabled=True)]
+    assert titles == ["Account switched"]
+
+
+def test_a_failure_with_no_later_success_still_needs_attention():
+    notices = engine()
+    notices.poll([], ACCOUNTS, enabled=True)
+    batch = [event("b", "switch_failed", source="hook", target=3), event("a", "switch_confirmed", source="manual", target=2)]
+    assert "Account switch needs attention" in [notice.title for notice in notices.poll(batch, ACCOUNTS, enabled=True)]

@@ -106,6 +106,10 @@ class ActivityStore:
                     exhausted[str(int(slot))] = epoch
         return {"items": items, "observations": observations, "exhaustedAt": exhausted}
 
+    def exhausted_slots(self) -> list[int]:
+        """Slots last seen at their limit and not yet seen to recover."""
+        return sorted(int(slot) for slot in self._document()["exhaustedAt"])
+
     def read(self, limit: int = 50) -> dict:
         limit = max(0, min(MAX_ITEMS, limit)) if isinstance(limit, int) and not isinstance(limit, bool) else 50
         return {"items": list(reversed(self._document()["items"]))[:limit]}

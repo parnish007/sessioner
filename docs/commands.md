@@ -65,7 +65,7 @@ While running, it checks usage on a timer. If the active account is used up and 
 
 The Windows tray menu offers **Open dashboard**, the active account and next reset, watcher controls, usage refresh, saved accounts to switch to, and **Quit**. Reopening the shortcut reuses the running desktop instance for the same account store.
 
-Notifications are enabled by default and can be muted in **Switching**. They cover verified switches, failed switches, exhausted accounts, recovered quota, and logins that need renewal. Repeated observations are deduplicated; Windows can suppress notification banners.
+Notifications are enabled by default and can be muted in **Switching**. They cover verified switches, failed switches, exhausted accounts, recovered quota, and logins that need renewal. Repeated observations are deduplicated; Windows can suppress notification banners. With the watcher off, the tray app still re-checks usage every five minutes while an account is at its limit, so you hear when its quota returns. When the hook tries a backup that fails and the next one works, you get one notification for the switch, not a failure warning.
 
 The switch timeline records the account slot, time, source, candidate, and verified result with a safe reason code. It keeps at most 200 events and never includes credentials, transcript text, or raw provider errors.
 

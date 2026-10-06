@@ -307,6 +307,7 @@ def rotate_account(event: dict, switcher=None, now: float | None = None) -> dict
             excluded = {int(number) for number in cooldowns}
             # Work down the ranked candidates: one account with a bad credential must not
             # strand the person when another has room. Each candidate is tried at most once.
+            tried = False
             for _ in range(len(accounts)):
                 selection = select_backup(accounts, active_number=active_number, excluded=excluded)
                 try:
@@ -314,9 +315,12 @@ def rotate_account(event: dict, switcher=None, now: float | None = None) -> dict
                 except ValueError:
                     if selection.all_exhausted or selection.reset_unknown:
                         journal.record("all_exhausted", source="hook", from_slot=active_number, reason=selection.reason)
+                    elif not tried:
+                        journal.record("switch_failed", source="hook", from_slot=active_number, reason="no-available-account")
                     raise
                 if target is None:
                     return {"status": "ignored"}
+                tried = True
                 journal.record("candidate_selected", source="hook", from_slot=active_number, to_slot=target, reason=selection.reason)
                 if _switch_and_verify(switcher, target):
                     history.note_active(backup_dir, next(row for row in accounts if row["number"] == target), now=timestamp)

@@ -194,6 +194,7 @@ async function run(path, body, { onError, after } = {}) {
   stateVersion += 1;
   busy = true;
   let ok = false;
+  let refreshAfterFailure = false;
   document.body.setAttribute("aria-busy", "true"); // CSS locks the controls; no re-render, so focus and typing survive
   try {
     const result = await call(path, body);
@@ -210,8 +211,11 @@ async function run(path, body, { onError, after } = {}) {
     ok = true;
   } catch (error) {
     if (error instanceof Offline) goOffline(error.message);
-    else if (onError) onError(error.message);
-    else toast(error.message, true);
+    else {
+      if (onError) onError(error.message);
+      else toast(error.message, true);
+      refreshAfterFailure = true; // a failed switch is recorded in history; show it now, not at the next poll
+    }
   } finally {
     stateVersion += 1;
     busy = false;
@@ -220,6 +224,7 @@ async function run(path, body, { onError, after } = {}) {
     document.body.removeAttribute("aria-busy");
     settleView();
     render({ force: true });
+    if (refreshAfterFailure) poll();
   }
   return ok;
 }
@@ -1080,45 +1085,90 @@ const EVENT_REASONS = {
   "credentials-unavailable": "The saved login could not be read. Check the credential store and retry.",
   "quota-recovered": "Fresh usage confirms there is room again.",
 };
-const EVENT_SOURCES = { manual: "Manual", hook: "Limit hook", watcher: "Reset watcher", desktop: "Tray", ui: "Dashboard" };
+const EVENT_SOURCES = { manual: "You", hook: "Limit hook", watcher: "Reset watcher", desktop: "Tray" };
 
 function eventAccount(number, fallback) {
   const account = accountByNumber(number);
   return account ? nameOf(account) : Number.isInteger(number) && number > 0 ? `Line ${number}` : fallback;
 }
 
-function eventWords(item) {
+// One short step per recorded event, so an episode reads as a chain.
+function stepWords(item) {
   const from = eventAccount(item.from, "The active account");
-  const to = eventAccount(item.to, "A backup account");
+  const to = eventAccount(item.to, "a backup");
   switch (item.kind) {
-    case "quota_exhausted": return ["warn", `${from} reached its usage limit.`];
-    case "candidate_selected": return ["muted", `${to} selected as the backup.`];
-    case "switch_confirmed": return ["ok", item.from ? `${from} → ${to}. Switch confirmed.` : `${to}. Switch confirmed.`];
-    case "switch_failed": return ["alert", item.to ? `Switch to ${to} failed.` : "The account switch failed."];
-    case "all_exhausted": return ["warn", "All saved backup accounts are at their limit."];
-    case "quota_available": return ["ok", `${eventAccount(item.to || item.from, "An account")} has quota available again.`];
-    case "login_required": return ["warn", `${eventAccount(item.to || item.from, "An account")} needs a new login.`];
+    case "quota_exhausted": return ["warn", `${from} exhausted`];
+    case "candidate_selected": return ["muted", item.source === "manual" || item.source === "desktop" ? `You chose ${to}` : `${to} selected`];
+    case "switch_confirmed": return ["ok", "Switch confirmed"];
+    case "switch_failed": return ["alert", item.to ? `Switch to ${to} failed` : "No backup could take over"];
+    case "all_exhausted": return ["warn", "Every account at its limit"];
+    case "quota_available": return ["ok", `${eventAccount(item.to || item.from, "An account")} has quota again`];
+    case "login_required": return ["warn", `${eventAccount(item.to || item.from, "An account")} needs a new login`];
     default: return null;
   }
 }
 
+// Group the journal into episodes: a limit, the backup chosen, any failed attempts, and the
+// outcome. Events from one source within a few minutes of each other belong together.
+function episodes(items) {
+  const groups = [];
+  let open = null;
+  for (const item of [...items].reverse()) {
+    if (!stepWords(item)) continue;
+    const at = Date.parse(item.at);
+    const standalone = item.kind === "quota_available" || item.kind === "login_required";
+    const joins = open && !standalone && open.source === item.source && Number.isFinite(at) && at - open.last <= 180000
+      && !(item.kind === "quota_exhausted" && open.steps.length)
+      // Each choice you make is its own episode; only automatic switching falls back within one.
+      && !(item.kind === "candidate_selected" && (item.source === "manual" || item.source === "desktop"));
+    if (!joins) {
+      open = { source: item.source, first: at, last: at, at: item.at, steps: [] };
+      groups.push(open);
+    }
+    open.steps.push(item);
+    open.last = Number.isFinite(at) ? at : open.last;
+    if (standalone || item.kind === "switch_confirmed" || item.kind === "all_exhausted") open = null;
+  }
+  return groups.reverse();
+}
+
+function episodeTone(steps) {
+  const last = steps[steps.length - 1];
+  return stepWords(last)[0] === "muted" ? "warn" : stepWords(last)[0];
+}
+
+function episodeReason(steps) {
+  const last = steps[steps.length - 1];
+  const failed = [...steps].reverse().find((item) => item.kind === "switch_failed" || item.kind === "all_exhausted");
+  const chosen = [...steps].reverse().find((item) => item.kind === "candidate_selected"); // the one that took over
+  const source = last.kind === "switch_confirmed" ? chosen : failed && failed === last ? failed : last.kind === "candidate_selected" ? last : null;
+  const reason = typeof source?.reason === "string" ? EVENT_REASONS[source.reason.replaceAll("_", "-")] : null;
+  if (last.kind === "switch_confirmed") return reason && chosen?.reason !== "manual-selection" ? `Why this account: ${reason[0].toLowerCase()}${reason.slice(1)}` : null;
+  if (last.kind === "candidate_selected") return "Waiting for the switch to be confirmed.";
+  return reason;
+}
+
 function activityCard() {
-  const items = (state.activity?.items || []).filter((item) => eventWords(item));
+  const groups = episodes(state.activity?.items || []);
   return el("section", { class: "card activity", "aria-labelledby": "activity-title" },
     el("div", { class: "section-head" }, el("h2", { id: "activity-title" }, "Switch history"), el("span", { class: "engrave" }, "Newest first")),
-    items.length ? el("ol", { class: "activity-list" }, items.slice(0, activityShown).map((item) => {
-      const [tone, words] = eventWords(item);
-      const reason = typeof item.reason === "string" ? EVENT_REASONS[item.reason.replaceAll("_", "-")] : null;
-      const validAt = typeof item.at === "string" && Number.isFinite(Date.parse(item.at));
-      return el("li", { class: `activity-item ${tone}` },
+    groups.length ? el("ol", { class: "activity-list" }, groups.slice(0, activityShown).map((group) => {
+      const reason = episodeReason(group.steps);
+      const validAt = typeof group.at === "string" && Number.isFinite(Date.parse(group.at));
+      return el("li", { class: `activity-item ${episodeTone(group.steps)}` },
         el("span", { class: "activity-dot", "aria-hidden": "true" }),
-        el("div", { class: "activity-copy" }, el("p", {}, words), reason ? el("p", { class: "fine" }, reason) : "",
+        el("div", { class: "activity-copy" },
+          el("p", { class: "chain" }, group.steps.map((item, i) => {
+            const [tone, words] = stepWords(item);
+            return [i ? el("span", { class: "arrow", "aria-hidden": "true" }, " → ") : "", el("span", { class: `step ${tone}` }, words)];
+          })),
+          reason ? el("p", { class: "fine" }, reason) : "",
           el("div", { class: "activity-meta" },
-            validAt ? el("time", { datetime: item.at, title: new Date(item.at).toLocaleString() }, when(item.at)) : "Time unavailable",
-            EVENT_SOURCES[item.source] ? el("span", {}, EVENT_SOURCES[item.source]) : "")));
-    })) : el("p", { class: "muted activity-empty" }, "No switches recorded yet. Confirmed switches, limits and login issues will appear here."),
-    items.length > activityShown ? el("div", { class: "row top" }, el("button", { type: "button", class: "btn quiet small", "data-key": "activity-more", onclick: () => { activityShown += 12; render({ force: true }); } }, `Show more (${items.length - activityShown} left)`)) : "",
-    el("p", { class: "fine" }, "History contains account slots and outcomes. It does not contain conversations, credentials or provider messages."));
+            validAt ? el("time", { datetime: group.at, title: new Date(group.at).toLocaleString() }, when(group.at)) : "Time unavailable",
+            EVENT_SOURCES[group.source] ? el("span", {}, EVENT_SOURCES[group.source]) : "")));
+    })) : el("p", { class: "muted activity-empty" }, "No switches recorded yet. Limits, switches and login problems will appear here."),
+    groups.length > activityShown ? el("div", { class: "row top" }, el("button", { type: "button", class: "btn quiet small", "data-key": "activity-more", onclick: () => { activityShown += 12; render({ force: true }); } }, `Show more (${groups.length - activityShown} left)`)) : "",
+    el("p", { class: "fine" }, "History holds account slots and outcomes only, never conversations, credentials or provider messages."));
 }
 
 function preferencesCard() {

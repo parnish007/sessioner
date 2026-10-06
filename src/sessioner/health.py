@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sessioner.service import Snapshot
+from sessioner.service import Snapshot, account_label
 
 
 CHECK_IDS = frozenset({"claude", "accounts", "active", "automatic", "backup", "watcher"})
@@ -38,26 +38,30 @@ def build_health(state: Snapshot, selection, watcher: dict, desktop: dict) -> di
     else:
         add("automatic", "attention", "Automatic switching is not configured.",
             {"action": "automatic", "label": "Enable switching"} if state.enable_problem() is None else setup)
-    if selection.target is not None:
-        add("backup", "ok", f"Account {selection.target} has measured room for a switch.")
+    if not enough:
+        add("backup", "attention", "A backup needs a second, different saved account.", setup)
+    elif selection.target is not None:
+        target = next((row for row in state.accounts if row.get("number") == selection.target), {})
+        add("backup", "ok", f"{account_label(target) if target else f'Account {selection.target}'} has measured room for a switch.")
     elif selection.all_exhausted:
         reset = selection.earliest_reset_at_text
         message = f"All accounts are exhausted. Next known reset: {reset}." if reset else "All accounts are exhausted; the reset time is unknown."
         add("backup", "attention", message, {"action": "refresh", "label": "Refresh usage"})
     else:
         add("backup", "unknown", "No backup with fresh, usable quota is confirmed.", {"action": "refresh", "label": "Refresh usage"})
-    running = watcher.get("enabled") is True and (watcher.get("running") is True or desktop.get("watcherRunning") is True)
+    enabled = watcher.get("enabled") is True
+    running = enabled and (watcher.get("running") is True or desktop.get("watcherRunning") is True)
     if running:
         add("watcher", "ok", "The reset watcher is running.")
+    elif not enabled:
+        add("watcher", "off", "The reset watcher is off. It is optional.", {"action": "watcher", "label": "Turn on watcher"})
+    elif desktop.get("supported") is False:
+        add("watcher", "attention", "The watcher is on, but nothing is running it.",
+            {"action": "command", "label": "Copy start command", "command": watcher["command"]})
+    elif desktop.get("running") is True:
+        add("watcher", "attention", "The watcher is on and the tray app is starting it.", {"action": "refresh", "label": "Check again"})
     else:
-        enabled = watcher.get("enabled") is True
-        worker = desktop.get("running") is True or watcher.get("running") is True
-        message = "The watcher is enabled, but no running worker is confirmed." if enabled else "The reset watcher is off."
-        fix = {"action": "watcher", "label": "Enable watcher"} if worker else {
-            "action": "command", "label": "Copy start command",
-            "command": watcher["command"] if desktop.get("supported") is False else desktop["command"],
-        }
-        add("watcher", "attention" if enabled else "off", message, fix)
+        add("watcher", "attention", "The watcher is on, but the Sessioner tray app is not running.", {"action": "watcher", "label": "Start in tray"})
     required = {"claude", "accounts", "active", "automatic", "backup"}
     return {"checks": checks, "ready": all(check["status"] == "ok" for check in checks if check["id"] in required),
             "watcherRunning": running}

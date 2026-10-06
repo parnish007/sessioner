@@ -309,3 +309,45 @@ def test_quit_during_real_quota_refresh_cancels_switch_without_disabling_prefere
     finally:
         release.set()
         product.stop()
+
+
+def test_the_tray_menu_can_open_and_quit_before_and_after_a_failed_status_read(tmp_path):
+    product, service, tray, _, _ = controller(tmp_path)
+    product.render_fallback()
+    actions = [item.action for item in tray.menus[-1][1]]
+    assert "dashboard" in actions and "quit" in actions
+
+    def broken(**_):
+        product._stop.set()  # let the worker make exactly one pass
+        raise RuntimeError("engine unavailable")
+
+    service.snapshot = broken
+    product._actions.put_nowait("wake")
+    product._work()  # one pass: the failed check leaves a usable menu behind
+    assert product._error and "quit" in [item.action for item in tray.menus[-1][1]]
+
+
+def test_a_double_click_opens_the_dashboard_once(tmp_path):
+    product, _, _, _, opened = controller(tmp_path)
+    moments = iter([100.0, 100.4, 102.0])
+    product.clock = lambda: next(moments)
+    for _ in range(3):
+        product.handle("dashboard")
+    assert len(opened) == 2
+
+
+def test_with_the_watcher_off_an_exhausted_account_is_rechecked_now_and_then(tmp_path):
+    product, service, _, _, _ = controller(tmp_path)
+    service.exhausted_slots = lambda: [1]
+    now = [1000.0]
+    product.clock = lambda: now[0]
+    product.check()
+    product.check()
+    assert service.refreshes == 1
+    now[0] += 301
+    product.check()
+    assert service.refreshes == 2
+    service.exhausted_slots = lambda: []
+    now[0] += 301
+    product.check()
+    assert service.refreshes == 2
