@@ -31,7 +31,7 @@ The root PowerShell launcher delegates to the product CLI. These are equivalent 
 | `vendor/claude-swap/src/claude_swap/` | Saved account storage, credential switching, usage, and the quota hook. |
 | `tests/` | Product behavior tested with isolated account data. |
 | `vendor/claude-swap/tests/` | Account-engine and hook regression tests. |
-| `docs/` | Product guides, design, and implementation plan. |
+| `docs/` | Product guides and verification notes. |
 | `setup.ps1`, `sessioner.ps1`, `accounts.ps1` | Local installation and launchers. |
 
 Registration uses unused account numbers and checks the active identity before saving it. Setup keeps existing saved accounts, requires distinct enabled accounts, and asks before restoring the starting account or enabling switching. It asks users to perform `/login` themselves; it never launches or controls Claude.
@@ -73,4 +73,4 @@ Useful command checks after installation are:
 
 Automated tests can establish correct account-store changes and hook installation. They cannot establish that a user's running Claude process adopts another real account. Live quota exhaustion, adoption of replacement credentials, and continuation require a separate real two-account test.
 
-See [the product design](ux-design.md), [the implementation plan](implementation-plan.md), and [the account-switch design](account-switch-design.md) for scope and architecture. License details are in [Licenses](credits.md).
+License details are in [Licenses](credits.md).
