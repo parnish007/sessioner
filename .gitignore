@@ -10,3 +10,14 @@ dist/
 htmlcov/
 *.cswap
 .credentials.json
+
+# Local agent notes and handoff material
+SESSIONER_HANDOFF.md
+
+# Runtime output and local account/test data
+*.log
+logs/
+.sessioner-backup/
+.claude-swap-backup/
+test-data/
+test_data/
