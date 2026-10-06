@@ -1,4 +1,6 @@
-# Sessioner
+<h1 align="center">
+  <img src="docs/assets/sessioner-logo.gif" alt="Sessioner: account patch bay for Claude Code" width="720">
+</h1>
 
 Save your Claude Code accounts, choose the active login, and turn on account switching when a usage allowance runs out. Keep working in ordinary Claude Code; Claude handles your conversation and context.
 
@@ -12,6 +14,8 @@ On Windows, install [uv](https://docs.astral.sh/uv/) and Claude Code, then sign 
 ```
 
 The guided setup saves your current login and helps you save a different backup account. It asks whether to return to your starting account and whether to turn on switching. It tells you when to use `/login` in Claude and waits until you are ready. Existing saved accounts are kept.
+
+Prefer a window to a prompt? Run `.\sessioner.ps1 ui` to do the same setup in your browser. It walks you through each step, shows your saved accounts as a patch bay with the active login plugged in, and lets you switch with one click. It runs only on this computer.
 
 You can leave a Claude conversation open during setup. Afterward, use `/hooks` in that conversation to confirm `StopFailure` with `rate_limit`. See [using an existing conversation](docs/existing-conversation.md) if it does not appear.
 

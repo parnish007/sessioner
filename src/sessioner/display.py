@@ -8,7 +8,7 @@ def command_name() -> str:
     return os.environ.get("SESSIONER_COMMAND") or "sessioner"
 
 
-_COMMAND = re.compile(r"(?<![\w.-])sessioner(?=\s+(?:setup|add|accounts|switch|on|off|status|doctor)\b|\s+--(?:help|version)\b)")
+_COMMAND = re.compile(r"(?<![\w.-])sessioner(?=\s+(?:setup|add|accounts|switch|on|off|status|doctor|ui)\b|\s+--(?:help|version)\b)")
 
 
 def say(console, text: str, **kwargs):

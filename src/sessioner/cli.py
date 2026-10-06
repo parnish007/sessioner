@@ -35,6 +35,9 @@ def _parser():
     commands.add_parser("off", aliases=["disable"], help="Disable automatic account switching")
     commands.add_parser("status", help="Show the current account and setup state")
     commands.add_parser("doctor", help="Check prerequisites and explain what to fix")
+    ui = commands.add_parser("ui", help="Open the browser interface for setup, switching, and usage")
+    ui.add_argument("--no-open", action="store_true", help="Print the link instead of opening a browser")
+    ui.add_argument("--port", type=int, default=0, help="Use a fixed local port instead of a free one")
     return parser
 
 
@@ -183,6 +186,9 @@ def _dispatch(args, service, console, input_fn, interactive):
         _say(console, "Next: sessioner switch <name-or-number>, or sessioner on")
     elif command == "doctor":
         return _doctor(console, service)
+    elif command == "ui":
+        from sessioner.web.server import run_ui
+        return run_ui(service, console, open_browser=not getattr(args, "no_open", False), port=getattr(args, "port", 0))
     else:
         state = service.snapshot()
         _status(console, state)
@@ -193,10 +199,10 @@ def _dispatch(args, service, console, input_fn, interactive):
             choice = input_fn("").strip()
             if choice in ("", "0", "q"):
                 return 0
-            commands = {"1": "setup", "2": "accounts", "3": "switch", "4": "add", "5": toggle, "6": "doctor"}
+            commands = {"1": "setup", "2": "accounts", "3": "switch", "4": "add", "5": toggle, "6": "doctor", "7": "ui"}
             selected = commands.get(choice)
             if not selected:
-                raise SessionerError("Choose a menu number from 0 to 6.", "sessioner")
+                raise SessionerError("Choose a menu number from 0 to 7.", "sessioner")
             return _dispatch(argparse.Namespace(command=selected, name=None, target=None), service, console, input_fn, interactive)
     return 0
 

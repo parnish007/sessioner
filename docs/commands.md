@@ -14,12 +14,19 @@ Run these commands from the Sessioner directory in PowerShell. The launcher uses
 | `.\sessioner.ps1 off` | Turn off automatic switching and keep your saved accounts. |
 | `.\sessioner.ps1 status` | Check the active account, saved accounts, and switching configuration. |
 | `.\sessioner.ps1 doctor` | Check readiness and show a concrete next step for each problem. |
+| `.\sessioner.ps1 ui [--no-open] [--port N]` | Open the browser interface for guided setup, switching, and usage. |
 | `.\sessioner.ps1 --help` | Show command help. |
 | `.\sessioner.ps1 --version` | Show the Sessioner version. |
 
 Square brackets indicate an optional argument; leave the brackets out of the command. `enable` and `disable` remain accepted as aliases for `on` and `off`.
 
 Status reports Sessioner's user settings. Use `/hooks` inside Claude to confirm the hook is loaded in your conversation; project settings or an organization policy can prevent it from running.
+
+## Browser interface
+
+`.\sessioner.ps1 ui` opens a page in your default browser. It offers the same actions as the terminal commands: save the current login with a name, switch accounts, refresh usage, and turn automatic switching on or off. While setup is unfinished, the top card shows only the next step, with four lamps for progress. With switching on, a dashed cable shows which saved account Sessioner would use next.
+
+The page is served from `127.0.0.1` for this one run. Each launch has its own secret link; the page rejects other websites and other computers. It shows names, emails, and usage percentages, never credentials, and it does not read conversations. Choose **Quit** in the page or press Ctrl+C in the terminal to stop it. Use `--no-open` to print the link instead of opening a browser, and `--port` for a fixed port.
 
 ## Save another account
 

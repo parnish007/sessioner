@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="sessioner-token" content="__TOKEN__">
+<meta name="color-scheme" content="light dark">
+<title>Sessioner patch bay</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="frame">
+  <header class="mast">
+    <div>
+      <h1>Sessioner</h1>
+      <p class="engrave">Claude account patch bay</p>
+    </div>
+    <div class="mast-actions">
+      <button type="button" class="btn quiet" id="sound" aria-pressed="false">Sound off</button>
+      <button type="button" class="btn quiet" id="refresh">Refresh usage</button>
+      <button type="button" class="btn quiet" id="quit">Quit</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="assist" class="assist" aria-live="polite" aria-label="Next step"></section>
+
+    <section class="bay" aria-labelledby="bay-title">
+      <h2 class="engrave" id="bay-title">Saved accounts</h2>
+      <p class="hint">Press a line number on your keyboard to patch it in.</p>
+      <div class="bay-grid" id="bay">
+        <svg class="cable" id="cable" aria-hidden="true" focusable="false"></svg>
+        <div class="source" id="source">
+          <span class="port source-port" id="source-port"></span>
+          <span class="engrave">Claude Code</span>
+        </div>
+        <ol class="jacks" id="jacks"></ol>
+        <p class="empty" id="empty" hidden>Nothing saved yet. Follow the step above to save the login Claude is using now.</p>
+      </div>
+    </section>
+
+    <section class="auto" id="auto" aria-labelledby="auto-title"></section>
+  </main>
+
+  <footer class="foot">
+    <p>Sessioner only changes which saved login Claude uses. Your conversation stays in Claude, and nothing here reads it.</p>
+  </footer>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,298 @@
+/* Patch bay: a hardware panel where the active login is the one the cable reaches.
+   Fonts are the ones Windows already ships, so the page works offline. */
+:root {
+  --panel: #dce1da;
+  --plate: #eef1ec;
+  --plate-edge: #b9c1b6;
+  --ink: #16202b;
+  --ink-soft: #4d5a66;
+  --cable: #1f3fd1;
+  --lamp: #e8a317;
+  --ok: #2f8f5b;
+  --warn: #b97a0b;
+  --alert: #c23b2a;
+  --seg-off: #cbd2c8;
+  --focus: #1f3fd1;
+
+  --display: "Bahnschrift SemiCondensed", "Bahnschrift", "Arial Narrow", "Segoe UI", sans-serif;
+  --label: "Bahnschrift SemiCondensed", "Bahnschrift", "Arial Narrow", "Segoe UI", sans-serif;
+  --body: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --panel: #20282e;
+    --plate: #2a343b;
+    --plate-edge: #46535c;
+    --ink: #e7ece6;
+    --ink-soft: #a5b1ba;
+    --cable: #7b93ff;
+    --lamp: #f4b73a;
+    --ok: #55c58a;
+    --warn: #e0a640;
+    --alert: #ee7766;
+    --seg-off: #3b4750;
+    --focus: #9fb0ff;
+  }
+}
+
+* { box-sizing: border-box; }
+html { background: var(--panel); }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--panel);
+  color: var(--ink);
+  font: 400 16px/1.5 var(--body);
+}
+.frame { max-width: 880px; margin: 0 auto; padding: 28px 16px 48px; }
+
+h1, h2, h3, p { margin: 0; }
+h1 { font: 700 44px/1 var(--display); letter-spacing: -0.01em; }
+.engrave {
+  font: 600 12px/1.2 var(--label);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.mast { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+.mast .engrave { margin-top: 8px; }
+.mast-actions { display: flex; gap: 8px; }
+
+/* Controls */
+.btn {
+  appearance: none;
+  border: 1.5px solid var(--ink);
+  background: var(--ink);
+  color: var(--plate);
+  font: 600 15px/1 var(--label);
+  letter-spacing: 0.04em;
+  padding: 12px 18px;
+  border-radius: 6px;
+  cursor: pointer;
+  min-height: 44px;
+}
+.btn:hover:not(:disabled) { background: var(--cable); border-color: var(--cable); color: #fff; }
+.btn:disabled { opacity: 0.5; cursor: progress; }
+[aria-busy="true"] .btn, [aria-busy="true"] .switch { pointer-events: none; opacity: 0.6; }
+.btn.quiet { background: transparent; color: var(--ink); border-color: var(--plate-edge); }
+.btn.quiet:hover:not(:disabled) { background: var(--plate); color: var(--ink); border-color: var(--ink); }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+input[type="text"] {
+  font: 500 17px/1 var(--mono);
+  color: var(--ink);
+  background: var(--panel);
+  border: 1.5px solid var(--plate-edge);
+  border-radius: 6px;
+  padding: 12px 14px;
+  min-height: 44px;
+  width: min(100%, 280px);
+}
+
+/* Assist card */
+.assist {
+  background: var(--plate);
+  border: 1.5px solid var(--plate-edge);
+  border-radius: 10px;
+  padding: 22px 22px 24px;
+  margin-bottom: 28px;
+}
+.assist .engrave { display: block; margin-bottom: 10px; }
+.assist h2 { font: 700 28px/1.15 var(--display); margin-bottom: 8px; }
+.assist p { color: var(--ink-soft); max-width: 58ch; }
+.assist p + p { margin-top: 8px; }
+.assist .row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 18px; }
+.assist.good { border-left: 6px solid var(--ok); }
+.assist.attention { border-left: 6px solid var(--lamp); }
+.assist.blocked { border-left: 6px solid var(--alert); }
+/* Operator lamps: setup is a real sequence, so progress is four lamps. */
+.lamps { list-style: none; display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 0 0 16px; padding: 0; }
+.lamp { display: flex; align-items: center; gap: 8px; color: var(--ink-soft); }
+.lamp .bulb {
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid var(--ink-soft);
+  background: var(--panel);
+  box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.16);
+}
+.lamp.lit { color: var(--ink); }
+.lamp.lit .bulb { background: var(--lamp); border-color: var(--ink); box-shadow: 0 0 0 3px color-mix(in srgb, var(--lamp) 35%, transparent); }
+.lamp.now { color: var(--ink); }
+.lamp.now .bulb { border-color: var(--ink); animation: breathe 1.8s ease-in-out infinite; }
+@keyframes breathe { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--lamp) 45%, transparent); } }
+.steps { list-style: none; margin: 16px 0 0; padding: 0; counter-reset: step; display: grid; gap: 10px; }
+.steps li { counter-increment: step; display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; }
+.steps li::before {
+  content: counter(step);
+  font: 700 14px/28px var(--label);
+  text-align: center;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--plate);
+}
+code, .code {
+  font: 500 14px/1 var(--mono);
+  background: var(--panel);
+  border: 1px solid var(--plate-edge);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+.field-error { color: var(--alert); font-weight: 600; margin-top: 10px; }
+
+/* The bay */
+.bay { margin-bottom: 28px; }
+.bay > .engrave { display: block; margin-bottom: 4px; }
+.hint { color: var(--ink-soft); font-size: 13px; margin-bottom: 12px; }
+.bay-grid { position: relative; padding-left: 56px; min-height: 120px; }
+/* The trough the patch cord runs in, between the Claude Code socket and the jacks. */
+.bay-grid::before {
+  content: "";
+  position: absolute; left: 4px; top: 22px; bottom: 0; width: 34px;
+  border-radius: 17px;
+  background: color-mix(in srgb, var(--plate-edge) 45%, transparent);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.12);
+}
+.cable { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 2; }
+.cable path { fill: none; stroke: var(--cable); stroke-width: 7; stroke-linecap: round; }
+.cable path.dangling { stroke-dasharray: 2 11; opacity: 0.7; }
+.cable path.ghost { stroke-width: 4; stroke-dasharray: 3 9; opacity: 0.55; }
+.cable .pulse { fill: #fff; opacity: 0.85; }
+.cable .plug { fill: var(--cable); }
+.cable .plug-tip { fill: var(--plate); }
+
+.source { display: flex; align-items: center; gap: 12px; height: 44px; margin: 0 0 14px -56px; padding-left: 8px; }
+.port {
+  display: inline-block;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  border: 2.5px solid var(--ink);
+  background: var(--panel);
+  box-shadow: inset 0 3px 0 rgba(0,0,0,0.16);
+  flex: none;
+}
+.jacks { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.jack {
+  position: relative;
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  gap: 8px 16px;
+  align-items: center;
+  background: var(--plate);
+  border: 1.5px solid var(--plate-edge);
+  border-radius: 10px;
+  padding: 16px 18px;
+}
+.jack.active { border-color: var(--ink); }
+.jack.disabled { opacity: 0.7; }
+.jack .line { display: block; margin-bottom: 3px; font-size: 10px; }
+.jack .port.spent, .jack.active .port.spent { background: var(--alert); border-color: var(--ink); box-shadow: 0 0 0 4px color-mix(in srgb, var(--alert) 30%, transparent); }
+.port.standby { border-style: dashed; border-color: var(--cable); }
+.port.flash { animation: connect 900ms ease-out; }
+@keyframes connect {
+  0% { box-shadow: 0 0 0 0 var(--lamp); transform: scale(1.25); }
+  100% { box-shadow: 0 0 0 14px transparent; transform: scale(1); }
+}
+.jack .port { grid-row: 1 / span 2; align-self: center; }
+.jack.active .port { background: var(--lamp); border-color: var(--ink); box-shadow: 0 0 0 4px color-mix(in srgb, var(--lamp) 35%, transparent); }
+.jack-name { font: 700 22px/1.15 var(--display); display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.jack-email { font: 400 13px/1.2 var(--mono); color: var(--ink-soft); word-break: break-all; }
+.chip {
+  font: 600 11px/1 var(--label);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 4px 7px;
+  border-radius: 4px;
+  border: 1.5px solid var(--ink);
+}
+.chip.live { background: var(--lamp); border-color: var(--ink); color: #16202b; }
+.chip.next { border: 1.5px dashed var(--cable); color: var(--cable); }
+.chip.alert { border-color: var(--alert); color: var(--alert); }
+.chip.muted { border-color: var(--plate-edge); color: var(--ink-soft); }
+.jack-act { grid-column: 3; grid-row: 1 / span 2; align-self: center; }
+.meters { grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px 22px; }
+.meter { display: flex; align-items: center; gap: 8px; }
+.meter .engrave { font-size: 11px; min-width: 52px; }
+.segs { display: inline-flex; gap: 2px; }
+.seg { width: 7px; height: 14px; border-radius: 1.5px; background: var(--seg-off); }
+.seg.on { background: var(--ok); }
+.meter.mid .seg.on { background: var(--warn); }
+.meter.high .seg.on { background: var(--alert); }
+.pct { font: 500 12px/1 var(--mono); color: var(--ink-soft); }
+.note { font-size: 13px; color: var(--ink-soft); }
+.empty { color: var(--ink-soft); padding: 12px 0; }
+
+/* Automatic switching */
+.auto {
+  background: var(--plate);
+  border: 1.5px solid var(--plate-edge);
+  border-radius: 10px;
+  padding: 18px 22px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 20px;
+  align-items: center;
+}
+.auto h2 { font: 700 20px/1.2 var(--display); display: flex; align-items: center; gap: 10px; }
+.armed-lamp { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--ink-soft); background: var(--panel); flex: none; }
+.armed-lamp.lit { background: var(--lamp); border-color: var(--ink); box-shadow: 0 0 0 3px color-mix(in srgb, var(--lamp) 35%, transparent); }
+.auto p { color: var(--ink-soft); font-size: 14px; max-width: 60ch; margin-top: 4px; }
+.auto .fine { grid-column: 1 / -1; }
+.switch {
+  appearance: none;
+  position: relative;
+  width: 72px; height: 40px;
+  border-radius: 20px;
+  border: 1.5px solid var(--ink);
+  background: var(--seg-off);
+  cursor: pointer;
+  padding: 0;
+}
+.switch::after {
+  content: "";
+  position: absolute; top: 4px; left: 4px;
+  width: 29px; height: 29px;
+  border-radius: 50%;
+  background: var(--ink);
+  transition: transform 180ms ease;
+}
+.switch[aria-checked="true"] { background: var(--lamp); }
+.switch[aria-checked="true"]::after { transform: translateX(32px); }
+.switch:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.foot { margin-top: 28px; color: var(--ink-soft); font-size: 13px; max-width: 62ch; }
+
+.toast {
+  position: fixed; left: 50%; bottom: 20px;
+  transform: translate(-50%, 24px);
+  opacity: 0;
+  max-width: min(92vw, 520px);
+  background: var(--ink); color: var(--plate);
+  padding: 12px 18px; border-radius: 8px;
+  font-weight: 600; font-size: 15px;
+  transition: opacity 160ms ease, transform 160ms ease;
+  pointer-events: none;
+  z-index: 10;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast.bad { background: var(--alert); color: #fff; }
+
+/* Power-on: the panel lights up in sequence the first time it opens. */
+.boot .lamp.lit .bulb { animation: lampOn 420ms ease-out both; animation-delay: calc(var(--n) * 170ms); }
+.boot .seg.on { animation: ledOn 240ms ease-out both; animation-delay: calc(400ms + var(--i) * 45ms); }
+@keyframes lampOn { from { background: var(--panel); box-shadow: none; } }
+@keyframes ledOn { from { opacity: 0; transform: scaleY(0.2); } }
+
+@media (max-width: 560px) {
+  h1 { font-size: 36px; }
+  .jack { grid-template-columns: 26px 1fr; }
+  .jack-act { grid-column: 2; grid-row: auto; justify-self: start; margin-top: 4px; }
+  .meters { grid-column: 2; }
+  .bay-grid { padding-left: 44px; }
+  .source { margin-left: -44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .switch::after, .toast { transition: none; }
+  .port.flash, .lamp.now .bulb, .boot .lamp.lit .bulb, .boot .seg.on { animation: none; }
+}
