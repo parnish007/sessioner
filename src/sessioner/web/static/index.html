@@ -6,45 +6,50 @@
 <meta name="sessioner-token" content="__TOKEN__">
 <meta name="color-scheme" content="light dark">
 <title>Sessioner patch bay</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23dce1da'/%3E%3Cpath d='M32 14C32 32 16 30 16 46' fill='none' stroke='%231f3fd1' stroke-width='6' stroke-linecap='round'/%3E%3Ccircle cx='32' cy='12' r='6' fill='%23dce1da' stroke='%2316202b' stroke-width='3'/%3E%3Ccircle cx='16' cy='50' r='7' fill='%23e8a317' stroke='%2316202b' stroke-width='3'/%3E%3Ccircle cx='48' cy='50' r='7' fill='%23dce1da' stroke='%2316202b' stroke-width='3'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
 <div class="frame">
   <header class="mast">
-    <div>
-      <h1>Sessioner</h1>
-      <p class="engrave">Claude account patch bay</p>
-    </div>
-    <div class="mast-actions">
-      <button type="button" class="btn quiet" id="sound" aria-pressed="false">Sound off</button>
-      <button type="button" class="btn quiet" id="refresh">Refresh usage</button>
-      <button type="button" class="btn quiet" id="quit">Quit</button>
+    <a class="brand" href="#home" id="brand" aria-label="Sessioner, back to the patch bay">
+      <svg class="mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+        <rect class="mark-trough" x="21" y="14" width="22" height="46" rx="11"/>
+        <path class="mark-cord" d="M32 17 C32 34 14 31 14 46"/>
+        <rect class="mark-plug" x="9" y="38" width="10" height="9" rx="2.5"/>
+        <circle class="mark-socket" cx="32" cy="12" r="6"/>
+        <circle class="mark-jack mark-jack-a" cx="14" cy="53" r="6.5"/>
+        <circle class="mark-jack mark-jack-b" cx="50" cy="53" r="6.5"/>
+      </svg>
+      <span>
+        <span class="wordmark">Sessioner</span>
+        <span class="engrave">Claude account patch bay</span>
+      </span>
+    </a>
+    <nav class="tabs" id="tabs" aria-label="Pages"></nav>
+    <div class="tools">
+      <button type="button" class="btn quiet small" id="sound" aria-pressed="false">Sound off</button>
+      <button type="button" class="btn quiet small" id="refresh">Refresh usage</button>
+      <button type="button" class="btn quiet small" id="quit">Quit</button>
     </div>
   </header>
 
-  <main>
-    <section id="assist" class="assist" aria-live="polite" aria-label="Next step"></section>
+  <div class="offline" id="offline" role="alert" hidden></div>
 
-    <section class="bay" aria-labelledby="bay-title">
-      <h2 class="engrave" id="bay-title">Saved accounts</h2>
-      <p class="hint">Press a line number on your keyboard to patch it in.</p>
-      <div class="bay-grid" id="bay">
-        <svg class="cable" id="cable" aria-hidden="true" focusable="false"></svg>
-        <div class="source" id="source">
-          <span class="port source-port" id="source-port"></span>
-          <span class="engrave">Claude Code</span>
-        </div>
-        <ol class="jacks" id="jacks"></ol>
-        <p class="empty" id="empty" hidden>Nothing saved yet. Follow the step above to save the login Claude is using now.</p>
-      </div>
-    </section>
-
-    <section class="auto" id="auto" aria-labelledby="auto-title"></section>
+  <main id="view" tabindex="-1">
+    <p class="connecting">Connecting to Sessioner…</p>
   </main>
 
   <footer class="foot">
-    <p>Sessioner only changes which saved login Claude uses. Your conversation stays in Claude, and nothing here reads it.</p>
+    <p>Sessioner only changes which saved login Claude uses. Your conversation stays in Claude. Token counts come from Claude's own usage numbers on this computer; message text is never read out, stored, or sent.</p>
   </footer>
+</div>
+
+<div class="stopped" id="stopped" role="alertdialog" aria-labelledby="stopped-title" hidden>
+  <div class="stopped-card">
+    <h2 id="stopped-title">Sessioner stopped</h2>
+    <p>Your saved accounts are untouched. You can close this tab, and run <code>sessioner ui</code> any time to open it again.</p>
+  </div>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script src="/app.js"></script>

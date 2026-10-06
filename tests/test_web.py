@@ -199,3 +199,38 @@ def test_quit_stops_the_server(running):
     client, _ = running
     status, data = client.request("POST", "/api/quit", body={})
     assert status == 200 and b"stopped" in data
+
+
+def test_a_reload_keeps_working_through_a_same_site_cookie_but_a_wrong_one_does_not(running):
+    client, _ = running
+    connection = http.client.HTTPConnection("127.0.0.1", client.port, timeout=5)
+    host = {"Host": f"127.0.0.1:{client.port}"}
+    connection.request("GET", f"/?t={client.server.token}", headers=host)
+    response = connection.getresponse(); response.read()
+    cookie = response.getheader("Set-Cookie")
+    assert "HttpOnly" in cookie and "SameSite=Strict" in cookie
+    pair = cookie.split(";")[0]
+    connection.close()
+
+    assert client.request("GET", "/", token=False, headers={"Cookie": pair})[0] == 200
+    assert client.request("GET", "/", token=False, headers={"Cookie": "sessioner-launch=wrong"})[0] == 403
+    assert client.request("GET", "/", token=False)[0] == 403
+
+
+def test_static_files_never_use_inline_scripts_styles_or_unsafe_dom_sinks():
+    from pathlib import Path
+    import re
+
+    static = Path(product_module("sessioner.web.server").__file__).parent / "static"
+    page = (static / "index.html").read_text(encoding="utf-8")
+    script = (static / "app.js").read_text(encoding="utf-8")
+    assert " style=" not in page and not re.search(r"<script(?![^>]*\ssrc=)", page)
+    assert "innerHTML" not in script and 'setAttribute("style"' not in script and "eval(" not in script
+
+
+def test_token_report_needs_the_token_and_answers_without_message_text(running):
+    client, _ = running
+    assert client.request("GET", "/api/tokens", token=False)[0] == 401
+    status, data = client.request("GET", "/api/tokens")
+    report = json.loads(data)["tokens"]
+    assert status == 200 and report["available"] is True and report["totals"]["total"] == 0

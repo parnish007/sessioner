@@ -7,6 +7,7 @@ website cannot drive it.
 
 from __future__ import annotations
 
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -22,6 +23,8 @@ from sessioner.web import api
 STATIC = Path(__file__).parent / "static"
 ASSETS = {"/app.css": "text/css; charset=utf-8", "/app.js": "text/javascript; charset=utf-8"}
 MAX_BODY = 16 * 1024
+DRAIN_LIMIT = 1024 * 1024  # larger refused bodies are not read at all
+COOKIE = "sessioner-launch"
 _CSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 
@@ -51,8 +54,10 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
-    def _send(self, status: int, body: bytes, content_type: str) -> None:
+    def _send(self, status: int, body: bytes, content_type: str, headers: dict | None = None) -> None:
         self.send_response(status)
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
@@ -88,21 +93,64 @@ class _Handler(BaseHTTPRequestHandler):
             return
         parts = urlsplit(self.path)
         if parts.path == "/":
-            if not self._valid_token((parse_qs(parts.query).get("t") or [None])[0]):
+            from_link = self._valid_token((parse_qs(parts.query).get("t") or [None])[0])
+            jar = SimpleCookie(self.headers.get("Cookie", ""))
+            from_cookie = COOKIE in jar and self._valid_token(jar[COOKIE].value)
+            if not (from_link or from_cookie):
                 self._send(403, b"Open this page with the link that sessioner ui prints.", "text/plain; charset=utf-8")
                 return
             page = (STATIC / "index.html").read_text(encoding="utf-8").replace("__TOKEN__", self.server.token)
-            self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
+            # The link works once; the cookie lets a reload keep working. It is never sent cross-site.
+            extra = {"Set-Cookie": f"{COOKIE}={self.server.token}; HttpOnly; SameSite=Strict; Path=/"} if from_link else None
+            self._send(200, page.encode("utf-8"), "text/html; charset=utf-8", extra)
         elif parts.path in ASSETS:
             self._send(200, (STATIC / parts.path.lstrip("/")).read_bytes(), ASSETS[parts.path])
         elif parts.path == "/api/state":
             if self._authorized():
                 self._run(lambda: {"state": api.build_state(self.server.service)})
+        elif parts.path == "/api/tokens":
+            if self._authorized():
+                self._tokens()
         else:
             self._json(404, {"error": "Not found."})
 
+    def _tokens(self) -> None:
+        # Reading a long history can take a few seconds the first time, so only the quick
+        # part holds the lock: switching must never wait behind counting.
+        try:
+            with self.server.lock:
+                accounts, live_ids = api.token_inputs(self.server.service)
+            result = api.build_tokens(self.server.service, accounts, live_ids)
+        except SessionerError as exc:
+            self._json(409, {"error": str(exc)})
+        except Exception:
+            self._json(500, {"error": "Sessioner could not count tokens. Try again."})
+        else:
+            self._json(200, result)
+
+    def _read_body(self) -> bytes | None:
+        """Consume the request body before any reply, or answer 413 and return None.
+
+        Replying while the client is still sending, then closing, makes Windows reset the connection
+        so the client never sees the answer. Bodies are read up to a bound; anything bigger is refused.
+        """
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = -1
+        if not 0 <= length <= DRAIN_LIMIT:
+            self.close_connection = True
+            self._json(413, {"error": "That request is too large."})
+            return None
+        data = self.rfile.read(length) if length else b""
+        if length > MAX_BODY:
+            self._json(413, {"error": "That request is too large."})
+            return None
+        return data
+
     def do_POST(self):
-        if not self._trusted_host() or not self._authorized():
+        raw = self._read_body()
+        if raw is None or not self._trusted_host() or not self._authorized():
             return
         origin = self.headers.get("Origin")
         if origin is not None and origin not in {f"http://{host}" for host in self.server.allowed_hosts}:
@@ -112,14 +160,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(415, {"error": "Send JSON."})
             return
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-        except ValueError:
-            length = -1
-        if not 0 <= length <= MAX_BODY:
-            self._json(413, {"error": "That request is too large."})
-            return
-        try:
-            body = json.loads(self.rfile.read(length) or b"{}")
+            body = json.loads(raw or b"{}")
         except (UnicodeError, json.JSONDecodeError):
             self._json(400, {"error": "That request could not be read."})
             return
