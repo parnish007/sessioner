@@ -31,10 +31,16 @@ def _parser():
     commands.add_parser("accounts", help="List saved accounts and refresh their usage")
     switch = commands.add_parser("switch", help="Choose the active saved account")
     switch.add_argument("target", nargs="?", metavar="name-or-number", help="Account name or displayed number")
+    rename = commands.add_parser("rename", help="Give a saved account a new name")
+    rename.add_argument("target", metavar="name-or-number", help="Current account name or displayed number")
+    rename.add_argument("name", metavar="new-name", help="The new short name")
     commands.add_parser("on", aliases=["enable"], help="Enable automatic account switching")
     commands.add_parser("off", aliases=["disable"], help="Disable automatic account switching")
     commands.add_parser("status", help="Show the current account and setup state")
     commands.add_parser("doctor", help="Check prerequisites and explain what to fix")
+    watch = commands.add_parser("watch", help="Run the optional reset watcher (turn it on in the browser first)")
+    watch.add_argument("--once", action="store_true", help="Check once and exit")
+    watch.add_argument("--interval", type=float, default=60.0, help="Seconds between checks (at least 15)")
     ui = commands.add_parser("ui", help="Open the browser interface for setup, switching, and usage")
     ui.add_argument("--no-open", action="store_true", help="Print the link instead of opening a browser")
     ui.add_argument("--port", type=int, default=0, help="Use a fixed local port instead of a free one")
@@ -153,6 +159,38 @@ def _doctor(console, service):
     return 1 if issues else 0
 
 
+_WATCH_LINES = {
+    "armed": "The active account has room. Watching.",
+    "waiting": "Every saved account is at its limit. Waiting for the earliest reset.",
+    "reset_unknown": "Every saved account is at its limit and no reset time is known. Checking again later.",
+    "off": "The watcher was turned off. Stopping.",
+}
+
+
+def _watch_line(state):
+    name = state.get("state")
+    if name == "switched":
+        return f"Switched from account {state.get('lastSwitchFrom')} to {state.get('lastSwitchTo')}. Retry or resume in Claude; Sessioner never does."
+    if name == "blocked":
+        return f"Blocked ({state.get('reason') or 'unknown'}). The active account was left as it is."
+    return _WATCH_LINES.get(name, "Checked.")
+
+
+def _watch(console, service, args):
+    if not math.isfinite(args.interval) or args.interval <= 0:
+        raise SessionerError("The watcher interval must be greater than zero.", "sessioner watch --interval 60")
+    if args.interval < 15:
+        raise SessionerError("Use an interval of at least 15 seconds so usage is not checked too often.", "sessioner watch --interval 60")
+    watcher = service.watcher()
+    if not watcher.status().get("enabled"):
+        _say(console, "Sessioner: The reset watcher is off, so nothing was checked or changed.")
+        _say(console, "Next: turn it on in the browser (sessioner ui, Switching details), then run sessioner watch")
+        return 0
+    if not args.once:
+        _say(console, "Sessioner: Watcher is on. Press Ctrl+C to stop. It switches the saved login only.")
+    return watcher.run(once=args.once, interval=args.interval, on_tick=lambda state: _say(console, f"Sessioner: {_watch_line(state)}"))
+
+
 def _dispatch(args, service, console, input_fn, interactive):
     command = args.command
     if command == "setup":
@@ -177,6 +215,9 @@ def _dispatch(args, service, console, input_fn, interactive):
                 return 0
         account, changed = service.switch(target)
         _say(console, f"Sessioner: Switched to {account_label(account)}." if changed else f"Sessioner: {account_label(account)} is already active.")
+    elif command == "rename":
+        account = service.rename(args.target, args.name)
+        _say(console, f"Sessioner: Renamed to {account_label(account)}.")
     elif command in ("on", "enable"):
         service.set_automatic(True)
         show_enabled(console)
@@ -186,6 +227,8 @@ def _dispatch(args, service, console, input_fn, interactive):
         _say(console, "Next: sessioner switch <name-or-number>, or sessioner on")
     elif command == "doctor":
         return _doctor(console, service)
+    elif command == "watch":
+        return _watch(console, service, args)
     elif command == "ui":
         from sessioner.web.server import run_ui
         return run_ui(service, console, open_browser=not getattr(args, "no_open", False), port=getattr(args, "port", 0))

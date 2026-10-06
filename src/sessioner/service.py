@@ -4,15 +4,21 @@ from __future__ import annotations
 
 from contextlib import redirect_stdout
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import io
 import json
 import math
 from pathlib import Path
 import shutil
+import time
 from typing import Callable
 
-from sessioner.accounts import paths, quota_hook
+from sessioner.accounts import history, paths, process_detection, quota_hook
 from sessioner.accounts.models import normalize_alias
+from sessioner.accounts.selection import select_backup
+
+
+LOCK_RETRIES = 3
 
 
 class SessionerError(Exception):
@@ -75,8 +81,11 @@ class Snapshot:
     def backup_available(self) -> bool:
         if not self.active:
             return False
-        identity = _account_identity(self.active)
-        return any(_account_identity(account) != identity and usage_available(account) for account in self.accounts)
+        return select_backup(
+            self.accounts,
+            active_number=self.active.get("number"),
+            now=datetime.now(timezone.utc),
+        ).target is not None
 
     def enable_problem(self) -> SessionerError | None:
         if self.settings_problem:
@@ -107,6 +116,8 @@ class SessionerService:
         self.switcher = switcher
         self.settings_path = Path(settings_path) if settings_path is not None else paths.get_claude_config_home() / "settings.json"
         self.which = which
+        self.sleep = time.sleep
+        self._ledger = None
 
     def _call(self, operation: str, action: Callable, next_step: str = "sessioner doctor"):
         try:
@@ -123,7 +134,9 @@ class SessionerService:
             if isinstance(exc, CredentialError):
                 raise SessionerError(f"Could not {operation}: the account credentials could not be read or written.", "Check access to your Claude login, then run sessioner doctor") from exc
             if isinstance(exc, LockError):
-                raise SessionerError(f"Could not {operation}: another account operation is in progress.", "Wait for it to finish, then retry the command") from exc
+                busy = SessionerError(f"Could not {operation}: another account operation is in progress.", "Wait for it to finish, then retry the command")
+                busy.retryable = True
+                raise busy from exc
             raise SessionerError(f"Could not {operation}.", next_step) from exc
 
     def snapshot(self, *, refresh: bool = False) -> Snapshot:
@@ -151,6 +164,56 @@ class SessionerService:
         except (OSError, ValueError, UnicodeError):
             problem = f"Claude settings could not be read as valid hook settings: {self.settings_path}. Repair this file before changing hooks."
         return Snapshot(accounts, active, email, installed, disabled, problem, self.which("claude"))
+
+    def live_sessions(self):
+        """Return live Claude metadata and the number of unreadable records.
+
+        Sessioner intentionally delegates filtering to Claude's session
+        detector; this call reads session metadata only.  The settings directory is
+        also the profile directory whose account is shared by every session.
+        """
+        return process_detection.scan_sessions(claude_dir=self.settings_path.parent)
+
+    @property
+    def state_dir(self) -> Path:
+        """Where Sessioner keeps its own non-secret state, beside the saved accounts."""
+        return Path(getattr(self.switcher, "backup_dir", None) or paths.get_backup_root())
+
+    def watcher(self):
+        """The optional reset watcher; its state file holds no credentials."""
+        from sessioner.watcher import ResetWatcher  # imported here: the watcher imports this module
+
+        return ResetWatcher(self, state_path=self.state_dir / "sessioner-watcher.json")
+
+    def note_active(self, account: dict | None) -> None:
+        """Remember which login is active, so usage can be attributed to the right account later."""
+        history.note_active(self.state_dir, account)
+
+    def token_report(self, accounts: list[dict], live_ids) -> dict:
+        """Token usage per session and account, read from the counters Claude records locally."""
+        from sessioner.tokens import TokenLedger
+
+        if self._ledger is None:
+            self._ledger = TokenLedger(self.settings_path.parent / "projects")
+        return self._ledger.report(history=history.read(self.state_dir / history.FILE), accounts=accounts, live_ids=live_ids)
+
+    def rename(self, identifier: str, name: str) -> dict:
+        identifier = identifier.strip()
+        state = self.snapshot()
+        target = next((account for account in state.accounts if str(account["number"]) == identifier or str(account.get("alias", "")).casefold() == identifier.casefold()), None)
+        if target is None:
+            raise SessionerError(f"No saved account matches '{identifier}'.", "sessioner accounts, then sessioner rename <name-or-number> <new-name>")
+        try:
+            proposed = normalize_alias(name)
+        except ValueError as exc:
+            raise SessionerError("Use a nonnumeric account name with letters, digits, dots, dashes, or underscores; start without a dash.", "sessioner rename <name-or-number> <new-name>") from exc
+        if any(str(account.get("alias", "")).casefold() == proposed and account["number"] != target["number"] for account in state.accounts):
+            raise SessionerError(f"The account name '{proposed}' is already in use.", "sessioner rename <name-or-number> <different-name>")
+        self._call("rename the account", lambda: self.switcher.set_alias(str(target["number"]), proposed))
+        renamed = next((account for account in self.snapshot().accounts if account["number"] == target["number"]), None)
+        if renamed is None or renamed.get("alias") != proposed:
+            raise SessionerError("The new account name could not be confirmed.", "sessioner accounts")
+        return renamed
 
     def default_name(self, state: Snapshot | None = None) -> str:
         state = state or self.snapshot()
@@ -182,6 +245,7 @@ class SessionerService:
         after = self.snapshot()
         if not after.active or after.active.get("alias") != proposed:
             raise SessionerError("The saved account could not be confirmed.", "sessioner accounts")
+        self.note_active(after.active)
         return Registration(after.active, len(after.accounts) > len(before.accounts), "could not verify that the stored credential" in captured.getvalue())
 
     def switch(self, identifier: str) -> tuple[dict, bool]:
@@ -192,12 +256,22 @@ class SessionerService:
         target = next((account for account in state.accounts if str(account["number"]) == identifier or str(account.get("alias", "")).casefold() == identifier.casefold()), None)
         if target is None:
             raise SessionerError(f"No saved account matches '{identifier}'.", "sessioner accounts, then sessioner switch <name-or-number>")
-        result = self._call("switch accounts", lambda: self.switcher.switch_to(str(target["number"]), json_output=True))
+        # The hook or another window can hold the account lock for a moment. Wait it out a
+        # few times before telling the person it failed; never spin.
+        for attempt in range(LOCK_RETRIES + 1):
+            try:
+                result = self._call("switch accounts", lambda: self.switcher.switch_to(str(target["number"]), json_output=True))
+                break
+            except SessionerError as exc:
+                if not getattr(exc, "retryable", False) or attempt == LOCK_RETRIES:
+                    raise
+                self.sleep(0.4 * (attempt + 1))
         if not isinstance(result, dict) or result.get("error") or not isinstance(result.get("to"), dict) or result["to"].get("number") != target["number"]:
             raise SessionerError("The account switch could not be confirmed.", "sessioner status")
         after = self.snapshot()
         if not after.active or after.active["number"] != target["number"]:
             raise SessionerError("The selected login is not active yet.", "sessioner doctor")
+        self.note_active(after.active)
         return after.active, result.get("switched") is True
 
     def set_automatic(self, enabled: bool) -> dict:
