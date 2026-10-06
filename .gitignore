@@ -21,3 +21,8 @@ logs/
 .claude-swap-backup/
 test-data/
 test_data/
+
+# Sessioner's own runtime state (normally lives beside the saved accounts, never in the repo)
+sessioner-hook-state.json
+sessioner-watcher.json
+sessioner-account-history.jsonl

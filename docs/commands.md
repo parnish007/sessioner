@@ -10,11 +10,13 @@ Run these commands from the Sessioner directory in PowerShell. The launcher uses
 | `.\sessioner.ps1 add [name]` | Save the login currently active in Claude, optionally giving it a name. |
 | `.\sessioner.ps1 accounts` | Show saved accounts and available usage information. |
 | `.\sessioner.ps1 switch [name-or-number]` | Select a saved account, or use the interactive picker when no account is given. |
+| `.\sessioner.ps1 rename <name-or-number> <new-name>` | Give a saved account a new name. The login itself does not change. |
 | `.\sessioner.ps1 on` | Turn on automatic switching; requires two enabled saved accounts. |
 | `.\sessioner.ps1 off` | Turn off automatic switching and keep your saved accounts. |
 | `.\sessioner.ps1 status` | Check the active account, saved accounts, and switching configuration. |
 | `.\sessioner.ps1 doctor` | Check readiness and show a concrete next step for each problem. |
-| `.\sessioner.ps1 ui [--no-open] [--port N]` | Open the browser interface for guided setup, switching, and usage. |
+| `.\sessioner.ps1 ui [--no-open] [--port N]` | Open the browser interface for guided setup, switching, sessions, and usage. |
+| `.\sessioner.ps1 watch [--once] [--interval S]` | Run the optional reset watcher. Needs to be turned on in the browser first. |
 | `.\sessioner.ps1 --help` | Show command help. |
 | `.\sessioner.ps1 --version` | Show the Sessioner version. |
 
@@ -24,9 +26,36 @@ Status reports Sessioner's user settings. Use `/hooks` inside Claude to confirm 
 
 ## Browser interface
 
-`.\sessioner.ps1 ui` opens a page in your default browser. It offers the same actions as the terminal commands: save the current login with a name, switch accounts, refresh usage, and turn automatic switching on or off. While setup is unfinished, the top card shows only the next step, with four lamps for progress. With switching on, a dashed cable shows which saved account Sessioner would use next.
+`.\sessioner.ps1 ui` opens a page in your default browser with three tabs.
 
-The page is served from `127.0.0.1` for this one run. Each launch has its own secret link; the page rejects other websites and other computers. It shows names, emails, and usage percentages, never credentials, and it does not read conversations. Choose **Quit** in the page or press Ctrl+C in the terminal to stop it. Use `--no-open` to print the link instead of opening a browser, and `--port` for a fixed port.
+- **Patch bay.** Your saved accounts are jacks hanging off the Claude Code socket, and the cord is plugged into the one in use. Drag the plug onto another account to switch, or press that account's **Switch to this** button. A dashed cord shows which account Sessioner would use next. Beside the bay are the automatic-switching switch, a summary of live sessions, and a short animation of what happens at a limit. Until setup is finished, a card above the bay tells you the one next step.
+- **Details**, on every account. Gauges for the 5-hour, weekly, and any model-specific windows, each with a live countdown to its reset. Where the account stands as a backup and why. The tokens it has used, broken down by model, and the sessions it worked on. **Rename** is here too.
+- **Sessions.** Every Claude session on this profile, live or ended: project and folder, tokens used (input, output, cache write, cache read), the models, and how the tokens divide between your accounts. Live sessions also show their status, PID, and running time.
+- **Switching.** What happens when Claude reports a limit, the hook state, the next candidate and the order accounts would be tried in, and the optional reset watcher.
+
+On the patch bay, pressing an account's line number switches to it. The plug also works from the keyboard: focus it, choose an account with the arrow keys, and press Enter. Esc cancels a drag. Back and Forward work, and reloading the page keeps you where you were.
+
+If a switch can't be completed, the plug returns to the account that is still active and the page says why. A switch changes the login for every live session on the profile; retry or resume in Claude afterward.
+
+The page is served from `127.0.0.1` for this one run. Each launch has its own secret link; the page rejects other websites and other computers. It never shows credentials. Choose **Quit** in the page or press Ctrl+C in the terminal to stop it. Use `--no-open` to print the link instead of opening a browser, and `--port` for a fixed port.
+
+### Token counts
+
+Token counts are read from the usage numbers Claude Code already records on this computer for each reply, so showing them costs no tokens and sends nothing anywhere. Sessioner takes only the counts, the model name, the time, and the session's folder. It never keeps, shows, or stores message text.
+
+Claude's records don't say which login produced a reply. Sessioner keeps its own note of every change of the active login and uses the time of each reply to decide which account it belongs to. A session worked on by two accounts is divided between them. Use from before Sessioner started keeping that note is listed as **not attributed** instead of being guessed.
+
+## Reset watcher
+
+The watcher is optional and off by default. Turn it on under **Switching** in the browser, then start it:
+
+```powershell
+.\sessioner.ps1 watch            # keeps running; Ctrl+C stops it
+.\sessioner.ps1 watch --once     # check once and exit
+.\sessioner.ps1 watch --interval 120
+```
+
+While it runs it re-checks usage on a timer. If your active account is used up and another has room, it switches the saved login through the same verified switch the hook uses. If every account is at its limit it waits for the earliest known reset, or checks again later when no reset time is known. It never sends, retries, or resumes anything in Claude; after a switch you retry or resume in Claude yourself. Opening the browser page never starts the watcher, and the switch in the page only saves the setting.
 
 ## Save another account
 

@@ -1,6 +1,6 @@
 # Use Sessioner with an existing conversation
 
-Your conversation stays in Claude Code. Sessioner manages saved accounts and the active login; it does not read or move your conversation history.
+Your conversation stays in Claude Code. Sessioner manages saved accounts and the active login; it does not move or change your conversation history. The only thing it takes from Claude's session records is the token counts shown in the browser, never the message text.
 
 ## Turn on switching while Claude is open
 

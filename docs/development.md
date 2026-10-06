@@ -28,18 +28,23 @@ The root PowerShell launcher delegates to the product CLI. These are equivalent 
 | Location | Purpose |
 | --- | --- |
 | `src/sessioner/` | Sessioner command routing, guided setup, and readiness messages. |
-| `src/sessioner/accounts/` | Saved account storage, credential switching, usage, and the quota hook. |
+| `src/sessioner/accounts/` | Saved account storage, credential switching, usage, the quota hook, and `selection.py`, the one policy that decides the next account for both the hook and the browser. |
+| `src/sessioner/web/` | The loopback browser interface: a small standard-library server, a JSON API, and the static page. |
+| `src/sessioner/watcher.py` | The optional reset watcher. |
+| `src/sessioner/tokens.py` | Token counts per session and account, from the usage counters Claude records locally. |
 | `tests/` | Product behavior tested with isolated account data. |
 | `docs/` | Product guides and verification notes. |
 | `setup.ps1`, `sessioner.ps1`, `accounts.ps1` | Local installation and launchers. |
 
 Registration uses unused account numbers and checks the active identity before saving it. Setup keeps existing saved accounts, requires distinct enabled accounts, and asks before restoring the starting account or enabling switching. It asks users to perform `/login` themselves; it never launches or controls Claude.
 
-The hook changes only the account login. Keep transcript access, prompt injection, and forced retries out of this path. `StopFailure` cannot request continuation. [Official hook reference](https://code.claude.com/docs/en/hooks#stopfailure).
+The hook changes only the account login. Keep conversation content, prompt injection, and forced retries out of this path. `StopFailure` cannot request continuation. [Official hook reference](https://code.claude.com/docs/en/hooks#stopfailure).
 
 ## Local account data
 
-Windows account data stays in the existing Claude account backup location. Credential `.enc` files are base64-encoded, not encrypted. Account exports contain plaintext login secrets. Keep account files and exports private and out of source control.
+Windows account data stays in the existing Claude account backup location. Sessioner keeps three small non-secret state files beside it: `sessioner-hook-state.json` (cooldowns after a switch), `sessioner-watcher.json` (whether the watcher is on, its state, and its last and next check), and `sessioner-account-history.jsonl` (the time, slot, and email of each change of the active login, used to attribute token counts). Claude's own settings file, `%USERPROFILE%\.claude\settings.json`, holds the hook entry. Session metadata shown in the browser is read live from Claude's `%USERPROFILE%\.claude\sessions` folder; Token counts are read from the per-reply usage counters in `%USERPROFILE%\.claude\projects`: only the counts, model name, time, and folder are taken, and message text is never kept or shown. Sessioner never writes to either folder.
+
+Two copies of Sessioner on one machine share all of this, including the single hook entry: whichever copy last ran `on` decides which Python the hook runs. Credential `.enc` files are base64-encoded, not encrypted. Account exports contain plaintext login secrets. Keep account files and exports private and out of source control.
 
 ## Verification
 
