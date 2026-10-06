@@ -460,7 +460,42 @@ a.acct-total:hover { border-color: var(--ink); }
 .facts dt { font: 600 11px/1.6 var(--label); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-soft); }
 .order { display: flex; flex-wrap: wrap; gap: 6px; }
 .watcher-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 10px; }
+.watcher-head .switch { flex: none; }
 .watcher p + p, .watcher .row { margin-top: 10px; }
+.watcher-start { margin-top: 10px; }
+.section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 8px; }
+.section-head h2, .privacy-note h2, .preferences > h2 { font: 700 20px/1.2 var(--display); }
+.privacy-note h2, .preferences > h2 { margin-bottom: 10px; }
+.health-list { list-style: none; margin: 16px 0 0; padding: 0; }
+.health-check { display: grid; grid-template-columns: minmax(0, 1fr) max-content auto; gap: 12px 20px; align-items: center; padding: 14px 0; border-top: 1px solid var(--plate-edge); }
+.health-copy { min-width: 0; }
+.health-copy strong { font: 600 16px/1.3 var(--label); }
+.health-copy p { color: var(--ink-soft); font-size: 14px; margin-top: 4px; }
+.health-check > .chip { justify-self: start; }
+.health-check > .btn, .health-check > .command-control { justify-self: end; }
+.command-control { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; min-width: 0; }
+.command-control code { overflow-wrap: anywhere; line-height: 1.5; }
+.health-check .command-control { max-width: 360px; margin-top: 0; }
+.preference-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; margin-top: 18px; }
+.preference-row h3 { font: 600 17px/1.3 var(--label); margin-bottom: 5px; }
+.preference-row p { font-size: 14px; color: var(--ink-soft); }
+.preference-row .switch { flex: none; }
+.preferences .preference-state { margin-top: 8px; }
+.desktop-hint { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--plate-edge); }
+.activity-list { list-style: none; margin: 16px 0 0; padding: 0; }
+.activity-item { position: relative; display: grid; grid-template-columns: 12px minmax(0, 1fr); gap: 14px; padding: 0 0 20px; }
+.activity-item::before { content: ""; position: absolute; left: 5px; top: 12px; bottom: 0; width: 1px; background: var(--plate-edge); }
+.activity-item:last-child { padding-bottom: 0; }
+.activity-item:last-child::before { display: none; }
+.activity-dot { width: 12px; height: 12px; margin-top: 5px; border-radius: 50%; border: 1.5px solid var(--ink-soft); background: var(--panel); }
+.activity-item.ok .activity-dot { border-color: var(--ok); background: var(--ok); }
+.activity-item.warn .activity-dot { border-color: var(--warn); background: var(--warn); }
+.activity-item.alert .activity-dot { border-color: var(--alert); background: var(--alert); }
+.activity-copy > p:first-child { font-size: 15px; font-weight: 600; }
+.activity-copy > p + p { margin-top: 4px; }
+.activity-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--ink-soft); font-size: 12px; margin-top: 6px; }
+.activity-meta time { font-variant-numeric: tabular-nums; }
+.activity-empty { margin-top: 16px; }
 .unverified { border-style: dashed; }
 .card p + p { margin-top: 8px; }
 
@@ -497,12 +532,19 @@ a.acct-total:hover { border-color: var(--ink); }
   .s-tokens { grid-column: 2; }
   .s-chips { grid-column: 2 / -1; }
   .s-time { grid-column: 3; grid-row: 1; }
+  .health-check { grid-template-columns: minmax(0, 1fr) max-content; }
+  .health-check > .btn, .health-check > .command-control { grid-column: 1 / -1; justify-self: start; }
 }
 @media (max-width: 640px) {
   h1 { font-size: 32px; }
   .tabs { order: 3; width: 100%; margin: 0; }
   .tab { flex: 1; justify-content: center; padding: 9px 8px; }
   .tools { margin-left: auto; }
+  .cols { grid-template-columns: minmax(0, 1fr); }
+  .health-check { gap: 10px; }
+  .health-check .chip { white-space: normal; max-width: 100px; line-height: 1.3; }
+  .health-check .btn { white-space: normal; }
+  .preference-row { gap: 12px; }
   .jack { grid-template-columns: 26px minmax(0, 1fr); }
   .jack-act { grid-column: 2; flex-direction: row; flex-wrap: wrap; }
   .bay-grid { padding-left: 44px; }

@@ -10,6 +10,7 @@ import json
 import math
 from pathlib import Path
 import shutil
+import threading
 import time
 from typing import Callable
 
@@ -118,6 +119,8 @@ class SessionerService:
         self.which = which
         self.sleep = time.sleep
         self._ledger = None
+        self._statistics_lock = threading.RLock()
+        self._preferences = None
 
     def _call(self, operation: str, action: Callable, next_step: str = "sessioner doctor"):
         try:
@@ -139,13 +142,18 @@ class SessionerService:
                 raise busy from exc
             raise SessionerError(f"Could not {operation}.", next_step) from exc
 
-    def snapshot(self, *, refresh: bool = False) -> Snapshot:
+    def snapshot(self, *, refresh: bool = False, source: str = "manual") -> Snapshot:
         roster = self._call("read saved accounts", lambda: self.switcher.list_accounts(json_output=True, fetch=None if refresh else set()))
         if not isinstance(roster, dict) or roster.get("error") or not isinstance(roster.get("accounts"), list):
             raise SessionerError("Could not read saved accounts. Check the account store with sessioner doctor.")
         accounts = roster["accounts"]
         if any(not isinstance(account, dict) or not isinstance(account.get("number"), int) or not isinstance(account.get("email"), str) for account in accounts):
             raise SessionerError("The saved account list needs repair. Run sessioner doctor.")
+        from sessioner.activity import FILE, ActivityStore
+
+        # Known login failures can notify from the cache. Quota recovery is only
+        # checked on refresh, with proof that its measurement follows exhaustion.
+        ActivityStore(self.state_dir / FILE).observe_accounts(accounts, source=source, include_quota=refresh)
         active_number = roster.get("activeAccountNumber")
         active = next((account for account in accounts if account["number"] == active_number), None)
         email = active["email"] if active else None
@@ -172,7 +180,10 @@ class SessionerService:
         detector; this call reads session metadata only.  The settings directory is
         also the profile directory whose account is shared by every session.
         """
-        return process_detection.scan_sessions(claude_dir=self.settings_path.parent)
+        with self._statistics_lock:
+            if not self.preferences().read()["statisticsEnabled"]:
+                return [], 0
+            return process_detection.scan_sessions(claude_dir=self.settings_path.parent)
 
     @property
     def state_dir(self) -> Path:
@@ -185,17 +196,52 @@ class SessionerService:
 
         return ResetWatcher(self, state_path=self.state_dir / "sessioner-watcher.json")
 
+    def preferences(self):
+        from sessioner.preferences import FILE, PreferenceStore
+
+        if self._preferences is None:
+            self._preferences = PreferenceStore(self.state_dir / FILE, on_change=self._preferences_changed)
+        return self._preferences
+
+    def _preferences_changed(self, value: dict) -> None:
+        with self._statistics_lock:
+            if value.get("statisticsEnabled") is False:
+                self._ledger = None
+
+    def set_preferences(self, **changes: bool) -> dict:
+        """Privacy changes wait for ongoing reads before completing."""
+        with self._statistics_lock:
+            return self.preferences().update(**changes)
+
+    def activity(self, limit: int = 50) -> dict:
+        from sessioner.activity import FILE, ActivityStore
+
+        return ActivityStore(self.state_dir / FILE).read(limit=limit)
+
+    def record_event(self, kind: str, source: str = "manual", from_slot=None, to_slot=None, reason=None):
+        from sessioner.activity import FILE, ActivityStore
+
+        return ActivityStore(self.state_dir / FILE).record(kind, source=source, from_slot=from_slot, to_slot=to_slot, reason=reason)
+
     def note_active(self, account: dict | None) -> None:
         """Remember which login is active, so usage can be attributed to the right account later."""
         history.note_active(self.state_dir, account)
 
     def token_report(self, accounts: list[dict], live_ids) -> dict:
         """Token usage per session and account, read from the counters Claude records locally."""
-        from sessioner.tokens import TokenLedger
+        with self._statistics_lock:
+            if not self.preferences().read()["statisticsEnabled"]:
+                self._ledger = None
+                return {
+                    "available": False, "reason": "statistics-disabled",
+                    "totals": {"input": 0, "output": 0, "cacheWrite": 0, "cacheRead": 0, "total": 0, "messages": 0},
+                    "trackedSince": None, "accounts": [], "sessions": [], "sessionCount": 0,
+                }
+            from sessioner.tokens import TokenLedger
 
-        if self._ledger is None:
-            self._ledger = TokenLedger(self.settings_path.parent / "projects")
-        return self._ledger.report(history=history.read(self.state_dir / history.FILE), accounts=accounts, live_ids=live_ids)
+            if self._ledger is None:
+                self._ledger = TokenLedger(self.settings_path.parent / "projects")
+            return self._ledger.report(history=history.read(self.state_dir / history.FILE), accounts=accounts, live_ids=live_ids)
 
     def rename(self, identifier: str, name: str) -> dict:
         identifier = identifier.strip()
@@ -248,7 +294,7 @@ class SessionerService:
         self.note_active(after.active)
         return Registration(after.active, len(after.accounts) > len(before.accounts), "could not verify that the stored credential" in captured.getvalue())
 
-    def switch(self, identifier: str) -> tuple[dict, bool]:
+    def switch(self, identifier: str, *, source: str = "manual", reason: str | None = None) -> tuple[dict, bool]:
         identifier = identifier.strip()
         if not identifier:
             raise SessionerError("Choose a saved account name or number.", "sessioner switch <name-or-number>")
@@ -256,6 +302,10 @@ class SessionerService:
         target = next((account for account in state.accounts if str(account["number"]) == identifier or str(account.get("alias", "")).casefold() == identifier.casefold()), None)
         if target is None:
             raise SessionerError(f"No saved account matches '{identifier}'.", "sessioner accounts, then sessioner switch <name-or-number>")
+        from_slot = state.active.get("number") if state.active else None
+        changed_target = from_slot != target["number"]
+        if changed_target:
+            self.record_event("candidate_selected", source, from_slot, target["number"], reason or ("manual-selection" if source == "manual" else None))
         # The hook or another window can hold the account lock for a moment. Wait it out a
         # few times before telling the person it failed; never spin.
         for attempt in range(LOCK_RETRIES + 1):
@@ -264,14 +314,23 @@ class SessionerService:
                 break
             except SessionerError as exc:
                 if not getattr(exc, "retryable", False) or attempt == LOCK_RETRIES:
+                    self.record_event("switch_failed", source, from_slot, target["number"], "account-busy" if getattr(exc, "retryable", False) else "switch-failed")
                     raise
                 self.sleep(0.4 * (attempt + 1))
         if not isinstance(result, dict) or result.get("error") or not isinstance(result.get("to"), dict) or result["to"].get("number") != target["number"]:
+            self.record_event("switch_failed", source, from_slot, target["number"], "switch-unverified")
             raise SessionerError("The account switch could not be confirmed.", "sessioner status")
-        after = self.snapshot()
+        try:
+            after = self.snapshot()
+        except SessionerError:
+            self.record_event("switch_failed", source, from_slot, target["number"], "switch-unverified")
+            raise
         if not after.active or after.active["number"] != target["number"]:
+            self.record_event("switch_failed", source, from_slot, target["number"], "switch-unverified")
             raise SessionerError("The selected login is not active yet.", "sessioner doctor")
         self.note_active(after.active)
+        if result.get("switched") is True:
+            self.record_event("switch_confirmed", source, from_slot, target["number"], "verified")
         return after.active, result.get("switched") is True
 
     def set_automatic(self, enabled: bool) -> dict:

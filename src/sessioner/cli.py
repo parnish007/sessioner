@@ -44,6 +44,8 @@ def _parser():
     ui = commands.add_parser("ui", help="Open the browser interface for setup, switching, and usage")
     ui.add_argument("--no-open", action="store_true", help="Print the link instead of opening a browser")
     ui.add_argument("--port", type=int, default=0, help="Use a fixed local port instead of a free one")
+    desktop = commands.add_parser("desktop", help="Open the Windows dashboard and tray companion")
+    desktop.add_argument("--no-open", action="store_true", help="Start the tray without opening the browser")
     return parser
 
 
@@ -232,6 +234,9 @@ def _dispatch(args, service, console, input_fn, interactive):
     elif command == "ui":
         from sessioner.web.server import run_ui
         return run_ui(service, console, open_browser=not getattr(args, "no_open", False), port=getattr(args, "port", 0))
+    elif command == "desktop":
+        from sessioner.desktop import run_desktop
+        return run_desktop(service, open_browser=not args.no_open)
     else:
         state = service.snapshot()
         _status(console, state)

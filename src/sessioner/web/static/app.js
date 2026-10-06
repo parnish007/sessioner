@@ -7,9 +7,11 @@ const SVG = "http://www.w3.org/2000/svg";
 const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 let state = null;
+let stateVersion = 0; // a changed generation makes pending polls obsolete
 let receivedAt = 0; // when the current state arrived, so ages and countdowns can keep running
 let view = null; // {kind: "home" | "account" | "sessions" | "switching", number?}
 let busy = false;
+let stopped = false;
 let toastTimer = 0;
 let draftName = null; // what the person has typed in the setup name field, kept across re-renders
 let formError = null;
@@ -26,8 +28,10 @@ let tokens = null; // token report, loaded only for the pages that show it
 let tokensAt = 0;
 let tokensLoading = false;
 let tokensError = null;
+let tokenVersion = 0; // discard an in-flight count if privacy is enabled before it returns
 let sessionFilter = "live";
 let sessionsShown = 40;
+let activityShown = 8;
 let soundOn = false;
 try { soundOn = localStorage.getItem("sessioner-sound") === "on"; } catch { /* storage can be blocked */ }
 let audio = null;
@@ -62,7 +66,9 @@ async function call(path, body) {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    throw new Offline("Lost contact with Sessioner. Run it again from the terminal to reopen this page.");
+    throw new Offline(state?.desktop?.running
+      ? "Lost contact with Sessioner. Open the Sessioner desktop shortcut to reopen it."
+      : "Lost contact with Sessioner. Run it again to reopen this page.");
   }
   const data = await response.json().catch(() => ({ error: "Sessioner sent an answer this page could not read." }));
   if (!response.ok) throw new Error(data.error || "That did not work.");
@@ -162,6 +168,10 @@ const accountByNumber = (number) => state.accounts.find((account) => account.num
 const activeAccount = () => state.accounts.find((account) => account.active);
 const sameEmail = (a, b) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
 const switchable = (account) => !!account && !account.active && !account.disabled;
+const statisticsEnabled = () => state?.preferences?.statisticsEnabled !== false;
+const liveSessionCount = () => statisticsEnabled() ? state?.sessions?.count || 0 : 0;
+const watcherRunning = () => typeof state?.health?.watcherRunning === "boolean" ? state.health.watcherRunning : state?.desktop?.watcherRunning === true || state?.watcher?.running === true;
+const desktopCommand = () => state?.desktop?.command || "sessioner desktop";
 
 // How an account stands as a backup, in words a person would use.
 function standing(account) {
@@ -180,7 +190,8 @@ function standing(account) {
 
 // Every action goes through here: lock the controls, call, show the new state.
 async function run(path, body, { onError, after } = {}) {
-  if (busy) return false;
+  if (busy || stopped) return false;
+  stateVersion += 1;
   busy = true;
   let ok = false;
   document.body.setAttribute("aria-busy", "true"); // CSS locks the controls; no re-render, so focus and typing survive
@@ -202,6 +213,7 @@ async function run(path, body, { onError, after } = {}) {
     else if (onError) onError(error.message);
     else toast(error.message, true);
   } finally {
+    stateVersion += 1;
     busy = false;
     hold = null;
     aim = null;
@@ -223,9 +235,8 @@ function switchTo(number) {
   hold = number; // the plug sits in the new jack while Sessioner confirms the login really changed
   aim = null;
   drawCable(true);
-  const live = state.sessions.count;
   run("/api/switch", { target: String(number) }, {
-    after: (result) => (live ? `${result.message} ${plural(live, "live session")} now ${live === 1 ? "uses" : "use"} it. Retry in Claude.` : result.message),
+    after: (result) => `${result.message} Retry or resume in Claude.`,
   });
 }
 
@@ -305,10 +316,10 @@ function go(next, { replace = false } = {}) {
 }
 
 function tabs() {
-  const live = state.sessions.count;
+  const live = liveSessionCount();
   const items = [
     [{ kind: "home" }, "Patch bay", ""],
-    [{ kind: "sessions" }, "Sessions", live ? `${live} live` : ""],
+    [{ kind: "sessions" }, "Sessions", !statisticsEnabled() ? "private" : live ? `${live} live` : ""],
     [{ kind: "switching" }, "Switching", state.automatic.blocked ? "blocked" : state.automatic.on ? "on" : "off"],
   ];
   $("tabs").replaceChildren(...items.map(([target, label, hint]) => {
@@ -321,22 +332,35 @@ function tabs() {
 /* ---------- Token report (only fetched for the pages that show it) ---------- */
 
 async function loadTokens({ force = false } = {}) {
-  if (tokensLoading || !state || document.hidden) return;
+  if (tokensLoading || !state || !statisticsEnabled() || stopped || document.hidden) return;
   if (!force && tokens && Date.now() - tokensAt < 30000) return;
+  const version = tokenVersion;
   tokensLoading = true;
   try {
-    tokens = (await call("/api/tokens")).tokens;
+    const report = (await call("/api/tokens")).tokens;
+    if (version !== tokenVersion || !statisticsEnabled()) return;
+    tokens = report;
     tokensError = null;
   } catch (error) {
-    tokensError = error.message;
+    if (version === tokenVersion && statisticsEnabled()) tokensError = error.message;
   } finally {
-    tokensAt = Date.now();
-    tokensLoading = false;
-    if (view && view.kind !== "switching") render();
+    if (version === tokenVersion) {
+      tokensAt = Date.now();
+      tokensLoading = false;
+      if (view && view.kind !== "switching") render();
+    }
   }
 }
 
-const wantsTokens = () => !!view && view.kind !== "switching";
+function clearTokens() {
+  tokenVersion += 1;
+  tokens = null;
+  tokensAt = 0;
+  tokensLoading = false;
+  tokensError = null;
+}
+
+const wantsTokens = () => statisticsEnabled() && !!view && view.kind !== "switching";
 
 /* ---------- Home: the patch bay ---------- */
 
@@ -354,7 +378,7 @@ function meter(window) {
 function jack(account) {
   const spent = account.usage.windows.some((window) => window.pct >= 100);
   const standby = account.number === state.selection.nextAccount && state.automatic.on;
-  const used = tokens?.accounts.find((row) => sameEmail(row.email, account.email));
+  const used = statisticsEnabled() ? tokens?.accounts.find((row) => sameEmail(row.email, account.email)) : null;
   return el("li", { class: `jack${account.active ? " active" : ""}${account.disabled ? " disabled" : ""}`, "data-number": account.number },
     el("span", { class: `port${spent ? " spent" : ""}${standby ? " standby" : ""}${account.number === justConnected ? " flash" : ""}`, "data-port": account.number }),
     el("div", { class: "jack-body" },
@@ -500,6 +524,12 @@ function demoCard() {
 }
 
 function sessionsCard() {
+  if (!statisticsEnabled()) {
+    return el("section", { class: "mini-card" },
+      el("h2", {}, "Account-only mode"),
+      el("p", {}, "Session and token statistics are off. Your accounts, plan limits and switching still work."),
+      el("div", { class: "row" }, el("button", { type: "button", class: "btn quiet small", "data-key": "privacy-settings", onclick: () => go({ kind: "switching" }) }, "Privacy settings")));
+  }
   const s = state.sessions;
   const total = tokens?.totals.total;
   return el("section", { class: "mini-card" },
@@ -787,12 +817,13 @@ function tokensPending(what) {
 function sourceNote() {
   const from = tokens?.trackedSince;
   return el("p", { class: "fine" },
-    "Counted from the usage numbers Claude records on this computer. It costs no tokens and nothing is sent anywhere. ",
+    "Counted from usage fields in Claude's local conversation log files. These statistics stay on this computer. ",
     from ? `Sessioner has recorded which account was active since ${when(from)}; use from before that can't be tied to an account.`
       : "Sessioner starts recording which account is active now; earlier use can't be tied to an account.");
 }
 
 function accountTokens(account) {
+  if (!statisticsEnabled()) return privacyCard();
   if (!tokens) return el("section", { class: "card" }, el("h3", {}, "Tokens used"), tokensPending("tokens"));
   const mine = tokens.accounts.find((row) => sameEmail(row.email, account.email));
   const worked = tokens.sessions.filter((session) => session.accounts.some((part) => sameEmail(part.email, account.email)));
@@ -852,7 +883,7 @@ function renameForm(account) {
 function accountPage(account) {
   const s = state;
   const stand = standing(account);
-  const live = s.sessions.count;
+  const live = liveSessionCount();
   const active = activeAccount();
   const next = s.selection.nextAccount != null ? accountByNumber(s.selection.nextAccount) : null;
   const isNext = account.number === s.selection.nextAccount;
@@ -935,6 +966,12 @@ function sessionRow(item) {
 }
 
 function sessionsPage() {
+  if (!statisticsEnabled()) {
+    return [
+      el("header", { class: "page-head" }, el("div", {}, el("h1", {}, "Sessions"), el("p", { class: "page-sub" }, "Session and token statistics are off."))),
+      privacyCard(),
+    ];
+  }
   const s = state.sessions;
   const login = s.activeAccount || "no saved login";
   const byId = new Map((tokens?.sessions || []).map((row) => [row.sessionId, row]));
@@ -984,20 +1021,143 @@ function sessionsPage() {
 
 /* ---------- Switching ---------- */
 
+function privacyCard() {
+  return el("section", { class: "card privacy-note" },
+    el("h2", {}, "Account-only privacy mode"),
+    el("p", {}, "Sessioner reads account and quota information only. Session records and conversation log files are not scanned while this mode is on."),
+    el("p", { class: "fine" }, "Account switching, plan limits and switch history remain available."),
+    el("div", { class: "row top" }, el("button", { type: "button", class: "btn quiet", "data-key": "open-privacy", onclick: () => go({ kind: "switching" }) }, "Open privacy settings")));
+}
+
+const HEALTH_LABELS = { claude: "Claude Code", accounts: "Saved accounts", active: "Active login", automatic: "Automatic switching", backup: "Backup account", watcher: "Reset watcher" };
+const HEALTH_STATES = { ok: ["ok", "Ready"], attention: ["warn", "Needs attention"], off: ["muted", "Off"], unknown: ["muted", "Unknown"] };
+
+function commandControl(command, label, key) {
+  return el("div", { class: "command-control" }, el("code", {}, command),
+    el("button", { type: "button", class: "btn quiet small", "data-key": key, onclick: (event) => copyText(command, event.currentTarget, label) }, label));
+}
+
+function healthFix(check) {
+  const fix = check.fix;
+  if (!fix) return "";
+  if (fix.command) return commandControl(fix.command, fix.label || "Copy command", `fix-${check.id}`);
+  return el("button", { type: "button", class: "btn quiet small", "data-key": `fix-${check.id}`,
+    onclick: () => fix.action === "setup" ? go({ kind: "home" }) : run("/api/health/fix", { check: check.id }) }, fix.label || "Fix this");
+}
+
+function healthCard() {
+  const health = state.health;
+  const checks = health?.checks || [];
+  return el("section", { class: "card health", "aria-labelledby": "health-title" },
+    el("div", { class: "section-head" }, el("h2", { id: "health-title" }, "Setup health"),
+      el("span", { class: `chip ${health?.ready ? "ok" : "warn"}` }, health?.ready ? "Ready" : "Check setup")),
+    el("p", { class: "fine" }, "Configuration and running status, with the next step for anything that needs attention."),
+    checks.length ? el("ul", { class: "health-list" }, checks.map((check) => {
+      const [tone, label] = HEALTH_STATES[check.status] || HEALTH_STATES.unknown;
+      return el("li", { class: "health-check" },
+        el("div", { class: "health-copy" }, el("strong", {}, HEALTH_LABELS[check.id] || "Setup check"), el("p", {}, check.message)),
+        el("span", { class: `chip ${tone}` }, label), healthFix(check));
+    })) : el("p", { class: "muted top" }, "Setup checks are not available yet. Refresh to check again."),
+    el("p", { class: "fine" }, "An installed hook still needs to be loaded by Claude. Check /hooks in your Claude terminal."));
+}
+
+const EVENT_REASONS = {
+  "earliest-reset": "Its quota resets soonest.", headroom: "It has the most room left.", "saved-order": "It is the first saved account with room.",
+  "quota-exhausted": "The account reached its usage limit.", "no-candidate": "No other account has fresh usage with room.",
+  "no-eligible-account": "No other account has fresh usage with room.", "all-exhausted": "Every saved backup is at its limit.",
+  "reset-unknown": "A reliable reset time is unavailable.", cooldown: "The account is in a cooldown after a recent switch attempt.",
+  "switch-failed": "The account switch could not be completed.", "switch-unconfirmed": "The active login did not confirm the requested switch.",
+  "lock-timeout": "Another account operation was still in progress. Try again.", "login-required": "Sign in again in Claude, then save the login.",
+  "authentication-required": "Sign in again in Claude, then save the login.", "refresh-failed": "Usage could not be refreshed. Check the login and retry.",
+  "unknown-quota": "Usage could not be confirmed, so Sessioner did not guess.",
+  "manual-selection": "You chose this account.", "switch-unverified": "The active login did not confirm the requested switch.",
+  "account-busy": "Another account operation was still in progress. Try again.", "no-available-account": "No other account has fresh usage with room.",
+  "no-active-account": "Save the active Claude login before switching automatically.", "active-has-headroom": "The active account still has room.",
+  "usage-unavailable": "Usage could not be checked for this account.", "usage-invalid": "The reported usage could not be confirmed.",
+  stale: "Usage is out of date. Refresh it before switching.", disabled: "This account is switched off.",
+  "token-expired": "Claude needs to renew this login.", "no-credentials": "Sign in again in Claude, then save the login.",
+  "relogin-required": "Sign in again in Claude, then save the login.", "foreign-credential": "The saved login identity could not be confirmed.",
+  "credentials-unavailable": "The saved login could not be read. Check the credential store and retry.",
+  "quota-recovered": "Fresh usage confirms there is room again.",
+};
+const EVENT_SOURCES = { manual: "Manual", hook: "Limit hook", watcher: "Reset watcher", desktop: "Tray", ui: "Dashboard" };
+
+function eventAccount(number, fallback) {
+  const account = accountByNumber(number);
+  return account ? nameOf(account) : Number.isInteger(number) && number > 0 ? `Line ${number}` : fallback;
+}
+
+function eventWords(item) {
+  const from = eventAccount(item.from, "The active account");
+  const to = eventAccount(item.to, "A backup account");
+  switch (item.kind) {
+    case "quota_exhausted": return ["warn", `${from} reached its usage limit.`];
+    case "candidate_selected": return ["muted", `${to} selected as the backup.`];
+    case "switch_confirmed": return ["ok", item.from ? `${from} → ${to}. Switch confirmed.` : `${to}. Switch confirmed.`];
+    case "switch_failed": return ["alert", item.to ? `Switch to ${to} failed.` : "The account switch failed."];
+    case "all_exhausted": return ["warn", "All saved backup accounts are at their limit."];
+    case "quota_available": return ["ok", `${eventAccount(item.to || item.from, "An account")} has quota available again.`];
+    case "login_required": return ["warn", `${eventAccount(item.to || item.from, "An account")} needs a new login.`];
+    default: return null;
+  }
+}
+
+function activityCard() {
+  const items = (state.activity?.items || []).filter((item) => eventWords(item));
+  return el("section", { class: "card activity", "aria-labelledby": "activity-title" },
+    el("div", { class: "section-head" }, el("h2", { id: "activity-title" }, "Switch history"), el("span", { class: "engrave" }, "Newest first")),
+    items.length ? el("ol", { class: "activity-list" }, items.slice(0, activityShown).map((item) => {
+      const [tone, words] = eventWords(item);
+      const reason = typeof item.reason === "string" ? EVENT_REASONS[item.reason.replaceAll("_", "-")] : null;
+      const validAt = typeof item.at === "string" && Number.isFinite(Date.parse(item.at));
+      return el("li", { class: `activity-item ${tone}` },
+        el("span", { class: "activity-dot", "aria-hidden": "true" }),
+        el("div", { class: "activity-copy" }, el("p", {}, words), reason ? el("p", { class: "fine" }, reason) : "",
+          el("div", { class: "activity-meta" },
+            validAt ? el("time", { datetime: item.at, title: new Date(item.at).toLocaleString() }, when(item.at)) : "Time unavailable",
+            EVENT_SOURCES[item.source] ? el("span", {}, EVENT_SOURCES[item.source]) : "")));
+    })) : el("p", { class: "muted activity-empty" }, "No switches recorded yet. Confirmed switches, limits and login issues will appear here."),
+    items.length > activityShown ? el("div", { class: "row top" }, el("button", { type: "button", class: "btn quiet small", "data-key": "activity-more", onclick: () => { activityShown += 12; render({ force: true }); } }, `Show more (${items.length - activityShown} left)`)) : "",
+    el("p", { class: "fine" }, "History contains account slots and outcomes. It does not contain conversations, credentials or provider messages."));
+}
+
+function preferencesCard() {
+  const privateMode = !statisticsEnabled();
+  const notifications = state.preferences?.notificationsEnabled !== false;
+  const desktop = state.desktop;
+  return el("section", { class: "card preferences", "aria-labelledby": "preferences-title" },
+    el("h2", { id: "preferences-title" }, "Privacy and notifications"),
+    el("div", { class: "preference-row" },
+      el("div", {}, el("h3", { id: "privacy-title" }, "Account-only privacy mode"),
+        el("p", { id: "privacy-help" }, "Skip session records and conversation log files. Hide session and token statistics; keep accounts, quota and switching.")),
+      el("button", { type: "button", class: "switch", role: "switch", "aria-checked": String(privateMode), "aria-labelledby": "privacy-title", "aria-describedby": "privacy-help", "data-key": "privacy",
+        onclick: () => run("/api/preferences", { statisticsEnabled: !statisticsEnabled() }) })),
+    el("p", { class: "fine preference-state" }, privateMode ? "On · session and token statistics are disabled." : "Off · Sessioner can scan Claude's local usage records for statistics."),
+    el("div", { class: "preference-row" },
+      el("div", {}, el("h3", { id: "notifications-title" }, "Windows notifications"),
+        el("p", { id: "notifications-help" }, "Get notified about switches, exhausted accounts, available quota and logins that need renewal.")),
+      el("button", { type: "button", class: "switch", role: "switch", "aria-checked": String(notifications), "aria-labelledby": "notifications-title", "aria-describedby": "notifications-help", "data-key": "notifications",
+        onclick: () => run("/api/preferences", { notificationsEnabled: !notifications }) })),
+    el("p", { class: "fine preference-state" }, !notifications ? "Off · Windows notifications are disabled." : desktop?.running ? "On · delivered by the Sessioner tray app. Windows notification settings still apply." : "On · available while Sessioner desktop is running on Windows."),
+    !desktop?.running && desktop?.supported !== false ? el("div", { class: "desktop-hint" }, el("p", { class: "fine" }, "Open your Sessioner desktop shortcut to keep it running in the tray. You can also start it with:"), commandControl(desktopCommand(), "Copy desktop command", "desktop-command")) : "");
+}
+
 function watcherCard() {
   const w = state.watcher;
-  const stale = w.enabled && (!w.lastPollAt || Date.now() - Date.parse(w.lastPollAt) > 10 * 60 * 1000);
+  const running = w.enabled && watcherRunning();
+  const desktop = state.desktop;
+  const label = !w.enabled ? "Off" : running ? "Running" : "Enabled · stopped";
+  const command = desktop?.supported !== false ? desktopCommand() : w.command;
   return el("section", { class: "card watcher" },
     el("div", { class: "watcher-head" },
       el("div", { class: "titlerow" }, el("h3", { id: "watcher-title" }, "Reset watcher"),
-        el("span", { class: `chip ${w.enabled ? (w.state === "blocked" ? "alert" : "live") : "muted"}` }, WATCHER_STATES[w.state] || "Off")),
+        el("span", { class: `chip ${!w.enabled ? "muted" : running ? "live" : "warn"}` }, label)),
       el("button", { type: "button", class: "switch", role: "switch", "aria-checked": String(w.enabled), "aria-labelledby": "watcher-title", "data-key": "watcher", onclick: () => run("/api/watcher", { enabled: !w.enabled }) })),
-    el("p", {}, "Optional, and off until you turn it on. While it runs, it re-checks usage on a timer and switches the saved login when your active account is used up and another has room. It never sends or retries anything in Claude."),
-    w.enabled
-      ? el("div", { class: "row" }, el("span", { class: "muted" }, "Run it with"), el("code", {}, w.command), copyButton(w.command, { small: true }), w.nextPollAt ? el("span", {}, "Next check in ", until(w.nextPollAt)) : "")
-      : el("p", { class: "fine" }, "Nothing runs in the background while this is off."),
-    stale ? el("p", { class: "note" }, `No recent check. Start it with ${w.command} in a terminal.`) : "",
-    el("p", { class: "fine" }, "This switch only saves the setting. Opening this page never starts the watcher."));
+    el("p", {}, "Optional, and off until you turn it on. It re-checks usage and switches the saved login when your active account is used up and another has room. You retry in Claude afterward."),
+    running ? el("p", { class: "fine" }, WATCHER_STATES[w.state] || "Watching", w.nextPollAt ? [" · next check in ", until(w.nextPollAt)] : "")
+      : w.enabled ? el("div", { class: "watcher-start" }, el("p", { class: "note" }, "The setting is on, but no watcher is running. Open the Sessioner desktop shortcut or start it with:"), commandControl(command, "Copy start command", "watcher-start"))
+        : el("p", { class: "fine" }, "Quota monitoring is off."),
+    el("p", { class: "fine" }, desktop?.running ? "The tray app runs the watcher while enabled. Closing this browser keeps the tray app running; Quit stops it." : "This switch saves the setting. Open Sessioner desktop to run it without a separate terminal. Opening this browser page alone does not start it."));
 }
 
 function switchingPage() {
@@ -1010,6 +1170,7 @@ function switchingPage() {
   return [
     el("header", { class: "page-head" },
       el("div", {}, el("h1", {}, "Switching"), el("p", { class: "page-sub" }, "What happens when Claude reports a usage limit, and what Sessioner will do about it."))),
+    healthCard(),
     el("ol", { class: "path", "aria-label": "What happens when Claude reports a usage limit" },
       el("li", { class: "hop" }, el("b", {}, "Claude"), "reports that a usage limit was hit"),
       el("li", { class: "hop" }, el("b", {}, "Hook"), "confirms the active login is used up"),
@@ -1022,7 +1183,7 @@ function switchingPage() {
           el("h3", {}, "Right now"),
           el("dl", { class: "facts" },
             el("dt", {}, "Hook"), el("dd", {}, hook),
-            el("dt", {}, "Applies to"), el("dd", {}, s.sessions.count ? `The whole Claude profile, shared by ${plural(s.sessions.count, "live session")}` : "The whole Claude profile"),
+            el("dt", {}, "Applies to"), el("dd", {}, liveSessionCount() ? `The whole Claude profile, shared by ${plural(liveSessionCount(), "live session")}` : "The whole Claude profile"),
             el("dt", {}, "Active login"), el("dd", {}, active ? active.label : (s.login ? `${s.login} (not saved)` : "None")),
             el("dt", {}, "Next candidate"), el("dd", {}, next ? `${nameOf(next)}, because ${REASONS[s.selection.reason] || "it has room"}` : `None, because ${REASONS[s.selection.reason] || "no other account is ready"}`),
             el("dt", {}, "Order tried"), el("dd", {}, order.length ? el("span", { class: "order" }, order) : "No other account is ready"),
@@ -1034,6 +1195,7 @@ function switchingPage() {
         el("section", { class: "card unverified" },
           el("h3", {}, "Not yet confirmed"),
           el("p", {}, "Whether a Claude conversation that is already running picks up the new login on its own. If it doesn't, retry or resume it in Claude. In Claude, type /hooks to check that the hook is loaded.")))),
+    el("div", { class: "cols" }, activityCard(), preferencesCard()),
   ];
 }
 
@@ -1045,7 +1207,7 @@ const stable = (value) => JSON.stringify(value, (key, v) => (key === "ageSeconds
 function render({ force = false } = {}) {
   if (!state || !view) return;
   if (drag) { dirty = true; return; } // never pull the bay out from under someone's hand
-  const next = stable([view, formError, renaming, renameError, sessionFilter, sessionsShown, tokensAt, tokensError, state]);
+  const next = stable([view, formError, renaming, renameError, sessionFilter, sessionsShown, activityShown, tokensAt, tokensError, state]);
   if (!force && next === signature) return;
   signature = next;
   const key = document.activeElement?.dataset?.key;
@@ -1061,11 +1223,21 @@ function render({ force = false } = {}) {
   if (focusId) { const node = $(focusId); focusId = null; node?.focus(); node?.select?.(); }
   const active = activeAccount();
   document.title = active ? `Sessioner · ${nameOf(active)}` : "Sessioner patch bay";
+  $("privacy-footnote").textContent = statisticsEnabled()
+    ? "Sessioner only changes which saved login Claude uses. Your conversation stays in Claude. Token statistics use usage fields in Claude's local conversation log files and stay on this computer."
+    : "Account-only mode: Sessioner reads account and quota information. Session records and conversation log files are not scanned. Your conversation stays in Claude.";
+  $("quit").title = state.desktop?.running ? "Quit the Sessioner tray app, dashboard and reset watcher" : "Stop this Sessioner dashboard";
   if (wantsTokens()) loadTokens();
 }
 
 function adopt(next, { quiet = false } = {}) {
+  stateVersion += 1;
+  const hadStatistics = statisticsEnabled();
   state = next;
+  if (!statisticsEnabled()) {
+    if (hadStatistics || tokens || tokensLoading || tokensError) clearTokens();
+    state = { ...state, sessions: { ...state.sessions, items: [], count: 0, unreadable: 0 } };
+  }
   receivedAt = Date.now();
   if (quiet) return;
   if (!view) {
@@ -1081,14 +1253,16 @@ function adopt(next, { quiet = false } = {}) {
 
 let failures = 0;
 async function poll() {
-  if (busy || document.hidden || !state) return;
+  if (busy || stopped || document.hidden || !state) return;
+  const version = stateVersion;
   try {
     const result = await call("/api/state");
+    if (busy || stopped || version !== stateVersion) return;
     failures = 0;
-    if (busy) return; // an action started meanwhile and its answer is newer
     adopt(result.state);
     if (wantsTokens()) loadTokens();
   } catch (error) {
+    if (busy || stopped || version !== stateVersion) return;
     if (error instanceof Offline && ++failures >= 2) goOffline(error.message);
   }
 }
@@ -1098,10 +1272,17 @@ async function poll() {
 $("refresh").addEventListener("click", async () => { if (await run("/api/refresh", {})) loadTokens({ force: true }); });
 $("brand").addEventListener("click", (event) => { event.preventDefault(); if (state) go({ kind: "home" }); });
 $("quit").addEventListener("click", async () => {
+  if (busy || stopped) return;
   try {
     await call("/api/quit", {});
-    document.body.setAttribute("aria-busy", "true");
+    stopped = true;
+    document.querySelector(".frame").inert = true;
+    $("stopped-title").textContent = state?.desktop?.running ? "Sessioner tray app stopped" : "Sessioner stopped";
+    $("stopped-message").replaceChildren(...(state?.desktop?.running
+      ? ["The tray app, dashboard and reset watcher are stopped. Your saved accounts are kept. Open the Sessioner desktop shortcut to start again."]
+      : ["Your saved accounts are kept. You can close this tab and run ", el("code", {}, "sessioner ui"), " to open the dashboard again."]));
     $("stopped").hidden = false;
+    $("stopped-title").focus();
   } catch (error) {
     toast(error.message, true);
   }

@@ -6,21 +6,33 @@ Open another PowerShell window in the Sessioner directory:
 
 ```powershell
 .\setup.ps1
-.\sessioner.ps1 setup
+.\desktop.ps1
 ```
 
-The first command installs Sessioner locally. The second walks you through account setup. You do not need to activate an environment or change PATH.
+The first command installs Sessioner locally. The second opens its dashboard and Windows tray without a separate terminal window. Use the Sessioner desktop shortcut afterward. You do not need to activate an environment or change PATH.
 
 ## Follow the guided setup
 
 1. Save the login currently active in Claude. The suggested name for your first account is `primary`.
 2. When prompted, return to Claude and use `/login` to sign in to a different account. Return to Sessioner and press Enter after the login completes.
 3. Save that account as your backup. If it is the same account, Sessioner tells you and lets you try the other login again.
-4. Choose whether to return to your starting account, then confirm whether to turn on automatic switching. Setup makes each change after your confirmation.
+4. Select your starting account and enable automatic switching when both logins are saved. The terminal alternative, `.\sessioner.ps1 setup`, also offers to restore your starting account.
 
 Use `/login` directly between accounts. Avoid `/logout` during registration because it can revoke a login you have already saved.
 
 Sessioner gives you the instructions; you perform the login in Claude. It does not launch Claude or control your conversation. If you already have saved accounts, setup keeps them and uses them toward the two-account requirement.
+
+## Desktop controls
+
+Open **Switching** for setup health and a timeline of account-switch decisions and results. Each setup problem offers the relevant fix or takes you back to setup. The watcher has separate enabled and running indicators.
+
+Enable the reset watcher here if you want Sessioner to check for available quota in the background. The desktop app starts it while enabled. Closing the browser leaves the desktop app running; use the tray or dashboard's **Quit** to stop it. Opening the shortcut again reopens the same dashboard. Installation does not enable the watcher or start Sessioner at Windows login.
+
+The tray offers the active account, next reset, watcher status, manual switching, refresh, and dashboard controls. Windows may place it in the taskbar's hidden-icons area. Notifications are optional; Windows notification settings can suppress them.
+
+Turn on **Account-only privacy mode** under **Switching** to disable session and token statistics. Sessioner then avoids reading both conversation logs and session metadata. Account quota, switching, the watcher, and the activity timeline still work. Turn privacy mode off when you want session details and token counts.
+
+Prefer the browser alone? `.\sessioner.ps1 ui` opens the dashboard without a tray or background worker. The watcher then needs `.\sessioner.ps1 watch` in a terminal.
 
 ## Check that you are ready
 

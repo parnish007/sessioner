@@ -9,10 +9,17 @@ dist/
 .coverage.*
 htmlcov/
 *.cswap
+*.enc
 .credentials.json
+.claude.json
+.claude/
+sequence.json
 
 # Local agent notes and handoff material
 SESSIONER_HANDOFF.md
+SESSIONER_PRD.md
+HANDOFF_PROMPT.md
+docs/superpowers/
 
 # Runtime output and local account/test data
 *.log
@@ -21,8 +28,19 @@ logs/
 .claude-swap-backup/
 test-data/
 test_data/
+output/playwright/
+.playwright-cli/
 
 # Sessioner's own runtime state (normally lives beside the saved accounts, never in the repo)
 sessioner-hook-state.json
 sessioner-watcher.json
 sessioner-account-history.jsonl
+sessioner-preferences.json
+sessioner-activity.json
+sessioner-quota-observations.json
+sessioner-desktop-runtime.json
+sessioner-desktop.json
+sessioner-watcher-runtime.json
+.sessioner-*.lock
+.sessioner-*.tmp
+*.lnk

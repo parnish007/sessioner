@@ -1,3 +1,5 @@
+param([switch]$DesktopShortcut, [switch]$NoDesktopShortcut)
+
 $ErrorActionPreference = 'Stop'
 Push-Location -LiteralPath $PSScriptRoot
 try {
@@ -13,6 +15,33 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Sessioner installation failed. Check the message above and run setup.ps1 again.' }
     Write-Host ''
     Write-Host 'Sessioner is installed.'
+    if (-not $NoDesktopShortcut) {
+        $sessionerPythonWindowless = Join-Path $PSScriptRoot '.venv\Scripts\pythonw.exe'
+        if (-not (Test-Path -LiteralPath $sessionerPythonWindowless -PathType Leaf)) {
+            throw 'The Python environment is missing pythonw.exe. Recreate .venv and run setup.ps1 again.'
+        }
+        $sessionerDesktopDirectory = [Environment]::GetFolderPath('Desktop')
+        if (-not [string]::IsNullOrWhiteSpace($sessionerDesktopDirectory)) {
+            $sessionerShortcutPath = Join-Path $sessionerDesktopDirectory 'Sessioner.lnk'
+            $sessionerShortcutShell = New-Object -ComObject WScript.Shell
+            try {
+                $sessionerShortcut = $sessionerShortcutShell.CreateShortcut($sessionerShortcutPath)
+                $sessionerShortcut.TargetPath = $sessionerPythonWindowless
+                $sessionerShortcut.Arguments = '-m sessioner.desktop'
+                $sessionerShortcut.WorkingDirectory = $PSScriptRoot
+                $sessionerShortcut.WindowStyle = 7
+                $sessionerShortcut.Description = 'Open Sessioner dashboard and Windows tray'
+                $sessionerShortcut.Save()
+            } finally {
+                if ($null -ne $sessionerShortcut) {
+                    [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($sessionerShortcut)
+                }
+                [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($sessionerShortcutShell)
+            }
+            Write-Host 'Open Sessioner from the desktop shortcut. The enabled watcher runs with the tray.'
+        }
+    }
+    Write-Host 'Open dashboard and tray: .\desktop.ps1'
     Write-Host 'Get started: .\sessioner.ps1 setup'
     Write-Host 'Check status: .\sessioner.ps1 status'
 } finally {

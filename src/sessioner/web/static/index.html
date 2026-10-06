@@ -41,14 +41,14 @@
   </main>
 
   <footer class="foot">
-    <p>Sessioner only changes which saved login Claude uses. Your conversation stays in Claude. Token counts come from Claude's own usage numbers on this computer; message text is never read out, stored, or sent.</p>
+    <p id="privacy-footnote">Sessioner only changes which saved login Claude uses. Your conversation stays in Claude.</p>
   </footer>
 </div>
 
-<div class="stopped" id="stopped" role="alertdialog" aria-labelledby="stopped-title" hidden>
+<div class="stopped" id="stopped" role="alertdialog" aria-modal="true" aria-labelledby="stopped-title" aria-describedby="stopped-message" hidden>
   <div class="stopped-card">
-    <h2 id="stopped-title">Sessioner stopped</h2>
-    <p>Your saved accounts are untouched. You can close this tab, and run <code>sessioner ui</code> any time to open it again.</p>
+    <h2 id="stopped-title" tabindex="-1">Sessioner stopped</h2>
+    <p id="stopped-message">Your saved accounts are kept. You can close this tab and run <code>sessioner ui</code> to open the dashboard again.</p>
   </div>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>

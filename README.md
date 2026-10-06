@@ -10,12 +10,12 @@ On Windows, install [uv](https://docs.astral.sh/uv/) and Claude Code, then sign 
 
 ```powershell
 .\setup.ps1
-.\sessioner.ps1 setup
+.\desktop.ps1
 ```
 
-The guided setup saves your current login and helps you save a different backup account. It asks whether to return to your starting account and whether to turn on switching. It tells you when to use `/login` in Claude and waits until you are ready. Existing saved accounts are kept.
+Open the Sessioner desktop shortcut for everyday use. Its dashboard guides you through saving your current login and a different backup account. Complete `/login` in ordinary Claude when prompted, then return to save the login. Existing saved accounts are kept. Terminal setup is also available with `.\sessioner.ps1 setup`.
 
-Prefer a window to a prompt? Run `.\sessioner.ps1 ui` for the same setup in your browser. Your saved accounts are jacks on a patch bay and the cord is plugged into the one Claude is using: drag the plug onto another account to switch, or press its **Switch** button. **Details** opens an account to show its plan limits with live reset countdowns, the tokens it has used by model, and every session it worked on. It runs only on this computer.
+Your saved accounts are jacks on a patch bay and the cord is plugged into the one Claude is using: drag the plug onto another account to switch, or press its **Switch** button. **Details** opens an account's limits and reset countdowns. The **Switching** tab holds setup health, switch history, watcher controls, privacy, and notifications. It runs on this computer.
 
 You can leave a Claude conversation open during setup. Afterward, use `/hooks` in that conversation to confirm `StopFailure` with `rate_limit`. See [using an existing conversation](docs/existing-conversation.md) if it does not appear.
 
@@ -36,7 +36,9 @@ The PowerShell command works without activating an environment or changing your 
 
 When Claude reports a rate limit, Sessioner checks whether the current account's usage allowance is used up. It changes the active login only when another enabled, different saved account has fresh usage (checked within five minutes) with room on every window. When several qualify, it prefers the one whose limits reset soonest, then the one with the most room, then the first saved. Unknown or malformed reset times are shown as unknown and never drive a switch.
 
-An optional reset watcher can also re-check usage on a timer and switch for you. It is off until you turn it on in the browser and start it with `.\sessioner.ps1 watch`; opening the page never starts it.
+An optional reset watcher can re-check usage on a timer and switch for you. Enable it in **Switching**, then keep the desktop app running. Closing the browser leaves the tray and enabled watcher running; **Quit** stops them. The tray shows the active account, next reset, and watcher status, and lets you switch accounts or reopen the dashboard. Notifications report switches, exhaustion, recovered quota, and login problems. Browser-only mode (`.\sessioner.ps1 ui`) and the terminal watcher (`.\sessioner.ps1 watch`) remain available.
+
+Turn on **Account-only privacy mode** in **Switching** to disable session and token statistics. Sessioner then skips conversation logs and session metadata, clears cached statistics, and keeps account switching and plan quota checks working. Statistics are enabled by default; when enabled, local Claude logs are read to extract counts, models, times, and folders. Message text is never stored or displayed by Sessioner.
 
 Sessioner changes the account login. Continue or retry through Claude's normal interface; the hook cannot request another turn. [Claude's hook reference](https://code.claude.com/docs/en/hooks#stopfailure). Adoption of the new login by a running Claude process still needs a real two-account test. Read [the conversation guide](docs/existing-conversation.md) for the fallback.
 

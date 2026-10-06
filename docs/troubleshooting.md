@@ -8,6 +8,8 @@ Start with:
 
 The check reports what is missing and the next command to run. The steps below cover common outcomes.
 
+The dashboard's **Switching → Setup health** shows the same essential setup conditions, usable backup quota, and whether a watcher worker is actually running. Use its fix controls for configuration and usage checks.
+
 ## Sessioner will not start
 
 Open PowerShell in the Sessioner directory and run:
@@ -18,6 +20,20 @@ Open PowerShell in the Sessioner directory and run:
 ```
 
 If setup cannot find `uv`, install [uv](https://docs.astral.sh/uv/) and reopen PowerShell. If you moved the checkout or changed the local package configuration, run setup again. The PowerShell launcher works without environment activation or a PATH change.
+
+## The watcher is enabled but stopped
+
+Open the Sessioner desktop shortcut or run `.\desktop.ps1`. Keep the desktop app running; closing its browser tab is fine. **Quit** stops its watcher. If using browser-only mode, run `.\sessioner.ps1 watch` separately. The enabled setting alone does not prove a worker is running.
+
+## The tray or notification is missing
+
+Check Windows' hidden-icons area on the taskbar. Enable notifications in **Switching** and check Windows notification and Do Not Disturb settings. Windows decides whether to show a banner. A muted or suppressed notification does not affect switching or its activity timeline.
+
+If the shortcut points to a moved checkout, run setup again from its new location to recreate it. A desktop app already running from another checkout can be closed through its tray before starting the new copy.
+
+## Session or token details disappeared
+
+Check **Account-only privacy mode** under **Switching**. With this on, Sessioner stops reading session metadata and conversation logs and clears cached statistics. Turn privacy mode off to read statistics again. Account quota and switching work in either mode.
 
 ## Setup cannot find a Claude login
 

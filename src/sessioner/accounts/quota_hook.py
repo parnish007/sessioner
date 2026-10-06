@@ -18,6 +18,7 @@ import tempfile
 import time
 from uuid import uuid4
 
+from sessioner.activity import FILE as ACTIVITY_FILE, ActivityStore
 from sessioner.accounts import history, paths
 from sessioner.accounts.selection import select_backup
 from sessioner.accounts.fsutil import replace_with_retry
@@ -288,6 +289,7 @@ def rotate_account(event: dict, switcher=None, now: float | None = None) -> dict
         if not _number(timestamp):
             raise ValueError("Invalid account cooldown time")
         backup_dir = Path(getattr(switcher, "backup_dir", paths.get_backup_root()))
+        journal = ActivityStore(backup_dir / ACTIVITY_FILE)
         state_path = backup_dir / "sessioner-hook-state.json"
         with FileLock(backup_dir / ".sessioner-hook.lock", timeout=0.5):
             roster = switcher.list_accounts(json_output=True)
@@ -295,6 +297,8 @@ def rotate_account(event: dict, switcher=None, now: float | None = None) -> dict
             active = next(row for row in accounts if row["number"] == active_number)
             if not _quota_exhausted(event, active):
                 return {"status": "ignored"}
+            journal.observe_accounts(accounts, source="hook")
+            journal.record("quota_exhausted", source="hook", from_slot=active_number, reason="quota-exhausted")
             cooldowns = _read_cooldowns(state_path, timestamp)
             # Remember an observed failure before attempting the write so a
             # second failure cannot cycle back to stale apparently-usable data.
@@ -304,12 +308,21 @@ def rotate_account(event: dict, switcher=None, now: float | None = None) -> dict
             # Work down the ranked candidates: one account with a bad credential must not
             # strand the person when another has room. Each candidate is tried at most once.
             for _ in range(len(accounts)):
-                target = choose_account(event, roster, excluded=excluded)
+                selection = select_backup(accounts, active_number=active_number, excluded=excluded)
+                try:
+                    target = choose_account(event, roster, excluded=excluded)
+                except ValueError:
+                    if selection.all_exhausted or selection.reset_unknown:
+                        journal.record("all_exhausted", source="hook", from_slot=active_number, reason=selection.reason)
+                    raise
                 if target is None:
                     return {"status": "ignored"}
+                journal.record("candidate_selected", source="hook", from_slot=active_number, to_slot=target, reason=selection.reason)
                 if _switch_and_verify(switcher, target):
                     history.note_active(backup_dir, next(row for row in accounts if row["number"] == target), now=timestamp)
+                    journal.record("switch_confirmed", source="hook", from_slot=active_number, to_slot=target, reason="verified")
                     return {"status": "switched", "from": active_number, "to": target}
+                journal.record("switch_failed", source="hook", from_slot=active_number, to_slot=target, reason="switch-unverified")
                 excluded.add(target)
                 cooldowns[str(target)] = timestamp + FAILED_ACCOUNT_COOLDOWN_SECONDS
                 _atomic_write(state_path, (json.dumps(cooldowns) + "\n").encode("utf-8"))

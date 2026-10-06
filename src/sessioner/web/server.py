@@ -31,12 +31,13 @@ _CSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'se
 class SessionerServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, service, port: int = 0):
+    def __init__(self, service, port: int = 0, *, on_quit=None):
         super().__init__(("127.0.0.1", port), _Handler)
         self.service = service
         self.token = secrets.token_urlsafe(24)
         # The account engine is not built for concurrent writers.
         self.lock = threading.Lock()
+        self.on_quit = on_quit
 
     @property
     def allowed_hosts(self) -> set[str]:
@@ -84,7 +85,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _authorized(self) -> bool:
         if not self._valid_token(self.headers.get("X-Sessioner-Token")):
-            self._json(401, {"error": "Open Sessioner again from the terminal to get a fresh link."})
+            self._json(401, {"error": "Open Sessioner again from its shortcut or launcher to get a fresh link."})
             return False
         return True
 
@@ -97,7 +98,7 @@ class _Handler(BaseHTTPRequestHandler):
             jar = SimpleCookie(self.headers.get("Cookie", ""))
             from_cookie = COOKIE in jar and self._valid_token(jar[COOKIE].value)
             if not (from_link or from_cookie):
-                self._send(403, b"Open this page with the link that sessioner ui prints.", "text/plain; charset=utf-8")
+                self._send(403, b"Open Sessioner again from its shortcut or launcher.", "text/plain; charset=utf-8")
                 return
             page = (STATIC / "index.html").read_text(encoding="utf-8").replace("__TOKEN__", self.server.token)
             # The link works once; the cookie lets a reload keep working. It is never sent cross-site.
@@ -167,7 +168,8 @@ class _Handler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path == "/api/quit":
             self._json(200, {"message": "Sessioner stopped. You can close this tab."})
-            threading.Thread(target=self.server.shutdown, daemon=True).start()
+            callback = self.server.on_quit or self.server.shutdown
+            threading.Thread(target=callback, daemon=True).start()
             return
         self._run(lambda: api.act(self.server.service, path, body))
 

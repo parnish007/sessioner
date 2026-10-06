@@ -11,6 +11,7 @@ from pathlib import Path
 
 from sessioner.accounts.selection import account_eligibility, isoformat, parse_reset_at, select_backup
 from sessioner.display import command_name
+from sessioner.health import CHECK_IDS, build_health
 from sessioner.service import SessionerError, SessionerService, Snapshot, _account_identity, _finite, account_label, usage_available
 
 API_VERSION = 1
@@ -112,8 +113,8 @@ def _accounts(state: Snapshot, *, now: datetime) -> list[dict]:
     return rows
 
 
-def _session_state(service: SessionerService, state: Snapshot, *, now: datetime) -> dict:
-    sessions, unreadable = service.live_sessions()
+def _session_state(service: SessionerService, state: Snapshot, *, now: datetime, enabled: bool = True) -> dict:
+    sessions, unreadable = service.live_sessions() if enabled else ([], 0)
     active = account_label(state.active) if state.active else state.login_email
     items = []
     for session in sessions:
@@ -144,6 +145,7 @@ def _session_state(service: SessionerService, state: Snapshot, *, now: datetime)
             "accountScope": "shared",
         })
     return {
+        "enabled": enabled,
         "items": items,
         "count": len(items),
         "unreadable": unreadable,
@@ -175,6 +177,7 @@ def _watcher_state(service: SessionerService) -> dict:
     reason = raw.get("reason")
     return {
         "enabled": raw.get("enabled") is True,
+        "running": raw.get("running") is True,
         "state": state,
         "reason": reason if isinstance(reason, str) and len(reason) <= 40 else None,
         "lastPollAt": _epoch_text(raw.get("lastPollAt")),
@@ -182,6 +185,20 @@ def _watcher_state(service: SessionerService) -> dict:
         "lastSwitchFrom": _slot(raw.get("lastSwitchFrom")),
         "lastSwitchTo": _slot(raw.get("lastSwitchTo")),
         "command": f"{command_name()} watch",
+    }
+
+
+def _desktop_state(service: SessionerService) -> dict:
+    from sessioner.desktop import status_for, supported
+
+    raw = status_for(service.state_dir)
+    return {
+        "supported": supported(),
+        "running": raw.get("running") is True,
+        "watcherRunning": raw.get("watcherRunning") is True,
+        "pid": _slot(raw.get("pid")),
+        "heartbeatAt": _epoch_text(raw.get("heartbeatAt")),
+        "command": f"{command_name()} desktop",
     }
 
 
@@ -225,7 +242,10 @@ def build_state(service: SessionerService, *, refresh: bool = False) -> dict:
         now=now,
     )
     accounts = _accounts(state, now=now)
-    sessions = _session_state(service, state, now=now)
+    preferences = service.preferences().read()
+    sessions = _session_state(service, state, now=now, enabled=preferences["statisticsEnabled"])
+    watcher = _watcher_state(service)
+    desktop = _desktop_state(service)
     usage_rows = [account["usage"] for account in accounts]
     problem = state.enable_problem()
     stage = _stage(state)
@@ -249,7 +269,11 @@ def build_state(service: SessionerService, *, refresh: bool = False) -> dict:
         "nextBackup": selection.target,
         "sessions": sessions,
         "selection": _selection_payload(selection),
-        "watcher": _watcher_state(service),
+        "watcher": watcher,
+        "desktop": desktop,
+        "preferences": preferences,
+        "activity": service.activity(),
+        "health": build_health(state, selection, watcher, desktop),
         "usageSummary": {
             "accounts": len(accounts),
             "eligible": sum(1 for row in usage_rows if row.get("eligible")),
@@ -262,6 +286,8 @@ def build_state(service: SessionerService, *, refresh: bool = False) -> dict:
 
 def token_inputs(service: SessionerService) -> tuple[list[dict], list[str]]:
     """The quick part of a token report; the server gathers this under its lock."""
+    if not service.preferences().read()["statisticsEnabled"]:
+        return [], []
     state = service.snapshot()
     service.note_active(state.active)
     sessions, _ = service.live_sessions()
@@ -284,6 +310,39 @@ def _text(body: object, key: str) -> str | None:
 
 def act(service: SessionerService, route: str, body: object) -> dict:
     """Run one page action and return the new state with a short confirmation."""
+    if route == "/api/preferences":
+        allowed = {"statisticsEnabled", "notificationsEnabled"}
+        if not isinstance(body, dict) or not body or not set(body) <= allowed or any(type(value) is not bool for value in body.values()):
+            raise SessionerError("Choose on or off for each preference.")
+        service.set_preferences(**body)
+        from sessioner.desktop import wake_for
+        wake_for(service.state_dir)
+        return {"message": "Preferences saved.", "state": build_state(service)}
+    if route == "/api/health/fix":
+        if not isinstance(body, dict) or set(body) != {"check"} or not isinstance(body["check"], str) or body["check"] not in CHECK_IDS:
+            raise SessionerError("Choose one of the setup checks shown in Sessioner.")
+        check = body["check"]
+        if check == "automatic":
+            service.set_automatic(True)
+            message = "Automatic switching is configured. Check /hooks in your open Claude session."
+        elif check == "backup":
+            return {"message": "Usage refreshed.", "state": build_state(service, refresh=True)}
+        elif check == "watcher":
+            from sessioner.desktop import wake_for
+            desktop = _desktop_state(service)
+            if desktop["running"] or service.watcher().status().get("running") is True:
+                service.watcher().set_enabled(True)
+                wake_for(service.state_dir)
+                message = "Reset watcher enabled. Its running status will update when the worker responds."
+            else:
+                message = (
+                    f"Run {command_name()} watch to start the enabled watcher."
+                    if not desktop["supported"] else
+                    f"Open the desktop shortcut or run {desktop['command']} to start the enabled watcher."
+                )
+        else:
+            message = "Open Setup and follow the account or Claude installation steps."
+        return {"message": message, "state": build_state(service)}
     if route == "/api/refresh":
         return {"message": "Usage refreshed.", "state": build_state(service, refresh=True)}
     if route == "/api/add":
@@ -320,8 +379,10 @@ def act(service: SessionerService, route: str, body: object) -> dict:
         if not isinstance(enabled, bool):
             raise SessionerError("Choose on or off.")
         service.watcher().set_enabled(enabled)
+        from sessioner.desktop import wake_for
+        wake_for(service.state_dir)
         message = (
-            f"Reset watcher is on. It only runs while {command_name()} watch is running; opening this page never starts it."
+            f"Reset watcher is enabled. Keep Sessioner desktop or {command_name()} watch running; browser-only mode does not start it."
             if enabled else "Reset watcher is off."
         )
         return {"message": message, "state": build_state(service)}
