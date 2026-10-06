@@ -21,6 +21,8 @@ Open PowerShell in the Sessioner directory and run:
 
 If setup cannot find `uv`, install [uv](https://docs.astral.sh/uv/) and reopen PowerShell. If you moved the checkout or changed the local package configuration, run setup again. The PowerShell launcher works without environment activation or a PATH change.
 
+If Windows reports that `sessioner.exe` is in use (`os error 32`) during an update, use **Quit** in the existing Sessioner dashboard or tray, then run setup again. Your Claude conversations can stay open.
+
 ## The watcher is enabled but stopped
 
 Open the Sessioner desktop shortcut or run `.\desktop.ps1`. Keep the desktop app running; closing its browser tab is fine. **Quit** stops its watcher. If using browser-only mode, run `.\sessioner.ps1 watch` separately. The enabled setting alone does not prove a worker is running.
