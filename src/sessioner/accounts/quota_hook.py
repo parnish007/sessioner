@@ -7,6 +7,7 @@ hook and activates credentials through the existing account-switch transaction.
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import json
 import math
 import os
@@ -17,7 +18,8 @@ import tempfile
 import time
 from uuid import uuid4
 
-from sessioner.accounts import paths
+from sessioner.accounts import history, paths
+from sessioner.accounts.selection import select_backup
 from sessioner.accounts.fsutil import replace_with_retry
 from sessioner.accounts.locking import FileLock
 
@@ -54,7 +56,11 @@ def _windows(account: dict) -> list[object]:
     usage = account.get("usage")
     if not isinstance(usage, dict):
         return []
-    return [usage[key] for key in ("fiveHour", "sevenDay") if key in usage]
+    windows = [usage[key] for key in ("fiveHour", "sevenDay") if key in usage]
+    scoped = usage.get("scoped", [])
+    if isinstance(scoped, list):
+        windows.extend(scoped)
+    return windows
 
 
 def _quota_exhausted(event: dict, active: dict) -> bool:
@@ -121,7 +127,13 @@ def _account_identity(account: dict) -> tuple[str, str]:
     )
 
 
-def choose_account(event: dict, roster: dict, excluded: set[int] | None = None) -> int | None:
+def choose_account(
+    event: dict,
+    roster: dict,
+    excluded: set[int] | None = None,
+    *,
+    now: datetime | None = None,
+) -> int | None:
     """Select a fresh, usable saved account; ordinary throttles do nothing."""
     if not _rate_failure(event):
         return None
@@ -129,21 +141,9 @@ def choose_account(event: dict, roster: dict, excluded: set[int] | None = None) 
     active = next(row for row in accounts if row["number"] == active_number)
     if not _quota_exhausted(event, active):
         return None
-    excluded = excluded or set()
-    excluded_identities = {
-        _account_identity(row)
-        for row in accounts
-        if row["number"] == active_number or row["number"] in excluded
-    }
-    for account in accounts:
-        number = account["number"]
-        if (
-            number != active_number
-            and number not in excluded
-            and _account_identity(account) not in excluded_identities
-            and _available(account)
-        ):
-            return number
+    result = select_backup(accounts, active_number=active_number, excluded=excluded, now=now)
+    if result.target is not None:
+        return result.target
     raise ValueError("No saved account has fresh available usage")
 
 
@@ -238,18 +238,42 @@ def configure_hook(settings_path: Path, enabled: bool) -> dict:
 
 
 def _read_cooldowns(path: Path, now: float) -> dict[str, float]:
-    if not path.exists():
-        return {}
+    # Cooldowns are a convenience, never a gate: a damaged file must not stop every
+    # future switch, so anything unreadable is dropped and the caller rewrites the file.
     try:
-        state = json.loads(path.read_text(encoding="utf-8"))
-    except (UnicodeError, json.JSONDecodeError) as exc:
-        raise ValueError("Account cooldown metadata is invalid") from exc
-    if not isinstance(state, dict) or any(
-        not isinstance(key, str) or not key.isdigit() or not _number(deadline)
-        for key, deadline in state.items()
-    ):
-        raise ValueError("Account cooldown metadata is invalid")
-    return {key: deadline for key, deadline in state.items() if deadline > now}
+        state = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return {}
+    if not isinstance(state, dict):
+        return {}
+    return {
+        key: deadline for key, deadline in state.items()
+        if isinstance(key, str) and key.isdigit() and _number(deadline) and deadline > now
+    }
+
+
+def _switch_and_verify(switcher, target: int) -> bool:
+    """One verified handoff attempt. False means this candidate did not take; try another."""
+    try:
+        switched = switcher.switch_to(str(target), json_output=True)
+        if (
+            not isinstance(switched, dict)
+            or switched.get("schemaVersion") != 1
+            or switched.get("switched") is not True
+            or not isinstance(switched.get("to"), dict)
+            or switched["to"].get("number") != target
+        ):
+            return False
+        status = switcher.status(json_output=True)
+        return (
+            isinstance(status, dict)
+            and status.get("schemaVersion") == 1
+            and isinstance(status.get("active"), dict)
+            and status["active"].get("number") == target
+            and status["active"].get("managed") is not False
+        )
+    except Exception:
+        return False
 
 
 def rotate_account(event: dict, switcher=None, now: float | None = None) -> dict:
@@ -276,28 +300,20 @@ def rotate_account(event: dict, switcher=None, now: float | None = None) -> dict
             # second failure cannot cycle back to stale apparently-usable data.
             cooldowns[str(active_number)] = timestamp + FAILED_ACCOUNT_COOLDOWN_SECONDS
             _atomic_write(state_path, (json.dumps(cooldowns) + "\n").encode("utf-8"))
-            target = choose_account(event, roster, excluded={int(number) for number in cooldowns})
-            if target is None:
-                return {"status": "ignored"}
-            switched = switcher.switch_to(str(target), json_output=True)
-            if (
-                not isinstance(switched, dict)
-                or switched.get("schemaVersion") != 1
-                or switched.get("switched") is not True
-                or not isinstance(switched.get("to"), dict)
-                or switched["to"].get("number") != target
-            ):
-                raise ValueError("Account switch could not be verified")
-            status = switcher.status(json_output=True)
-            if (
-                not isinstance(status, dict)
-                or status.get("schemaVersion") != 1
-                or not isinstance(status.get("active"), dict)
-                or status["active"].get("number") != target
-                or status["active"].get("managed") is False
-            ):
-                raise ValueError("Active account could not be verified")
-            return {"status": "switched", "from": active_number, "to": target}
+            excluded = {int(number) for number in cooldowns}
+            # Work down the ranked candidates: one account with a bad credential must not
+            # strand the person when another has room. Each candidate is tried at most once.
+            for _ in range(len(accounts)):
+                target = choose_account(event, roster, excluded=excluded)
+                if target is None:
+                    return {"status": "ignored"}
+                if _switch_and_verify(switcher, target):
+                    history.note_active(backup_dir, next(row for row in accounts if row["number"] == target), now=timestamp)
+                    return {"status": "switched", "from": active_number, "to": target}
+                excluded.add(target)
+                cooldowns[str(target)] = timestamp + FAILED_ACCOUNT_COOLDOWN_SECONDS
+                _atomic_write(state_path, (json.dumps(cooldowns) + "\n").encode("utf-8"))
+            raise ValueError("No saved account could be switched to")
     except Exception:
         # Do not forward exception details: upstream exceptions can contain
         # account identifiers. Hook diagnostics expose only account slot numbers.
