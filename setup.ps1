@@ -8,8 +8,17 @@ try {
         throw 'Install uv from https://docs.astral.sh/uv/getting-started/installation/ and run setup.ps1 again.'
     }
     if (-not (Test-Path -LiteralPath '.venv\Scripts\python.exe')) {
-        # A .venv without python.exe is left over from an interrupted setup; replace it.
-        & uv venv --clear --python 3.13 .venv
+        if (Test-Path -LiteralPath '.venv') {
+            # An interrupted setup leaves .venv with only uv's marker files. Remove exactly that;
+            # anything else in the folder is left for the person to look at.
+            $sessionerLeftover = @(Get-ChildItem -LiteralPath '.venv' -Recurse -Force -File |
+                Where-Object { $_.Name -notin @('CACHEDIR.TAG', 'pyvenv.cfg', '.gitignore', '.lock') })
+            if ($sessionerLeftover.Count -gt 0) {
+                throw 'The .venv folder is incomplete but contains files. Delete the .venv folder, then run setup.ps1 again.'
+            }
+            Remove-Item -LiteralPath '.venv' -Recurse -Force
+        }
+        & uv venv --python 3.13 .venv
         if ($LASTEXITCODE -ne 0) { throw 'Python environment setup failed.' }
     }
     & uv pip install --python '.venv\Scripts\python.exe' --link-mode copy --quiet -e '.'
