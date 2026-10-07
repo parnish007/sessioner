@@ -200,7 +200,7 @@ def _dispatch(args, service, console, input_fn, interactive):
             raise SessionerError("Setup needs an interactive terminal.", "Run sessioner setup in a terminal; sessioner add and sessioner on also work directly")
         return run_setup(service, console, input_fn)
     if command == "accounts":
-        _accounts(console, service.snapshot(refresh=True))
+        _accounts(console, service.snapshot(refresh=True, force=True))
     elif command == "add":
         show_registration(console, service.add(args.name))
         _say(console, "Next: sessioner accounts, or sessioner setup to add a backup")

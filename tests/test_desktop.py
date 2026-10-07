@@ -61,9 +61,11 @@ class Service:
         self.events = []
         self.on_snapshot = None
 
-    def snapshot(self, *, refresh=False, source="manual"):
+    def snapshot(self, *, refresh=False, source="manual", force=False):
         if refresh:
             self.refreshes += 1
+        if force:
+            self.forced = getattr(self, "forced", 0) + 1
         if self.on_snapshot:
             self.on_snapshot()
         return SimpleNamespace(accounts=self.rows, active=next(row for row in self.rows if row["number"] == self.active_number))

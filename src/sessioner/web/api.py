@@ -242,7 +242,7 @@ def _stage(state: Snapshot) -> str:
 
 
 def build_state(service: SessionerService, *, refresh: bool = False) -> dict:
-    state = service.snapshot(refresh=refresh)
+    state = service.snapshot(refresh=refresh, force=refresh)  # the page only refreshes when asked to
     service.note_active(state.active)  # also catches a login changed outside Sessioner
     now = datetime.now(timezone.utc)
     selection = select_backup(

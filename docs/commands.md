@@ -31,6 +31,7 @@ Status reports Sessioner's user settings. Use `/hooks` inside Claude to confirm 
 `.\sessioner.ps1 ui` opens a page in your default browser with three tabs.
 
 - **Patch bay.** Your saved accounts are jacks hanging off the Claude Code socket, and the cord is plugged into the one in use. Drag the plug onto another account to switch, or press that account's **Switch to this** button. A dashed cord shows which account Sessioner would use next. Beside the bay are the automatic-switching switch, a summary of live sessions, and a short animation of what happens at a limit. Until setup is finished, a card above the bay tells you the one next step.
+- **Add account**, the dashed slot under your accounts. It shows the three steps (type `/login` in Claude Code, sign in with a different account, come back), and the page notices the new login within a few seconds and asks for a name. First-time setup uses the same flow as four visible steps.
 - **Details**, on every account. Gauges for the 5-hour, weekly, and any model-specific windows, each with a live countdown to its reset. Where the account stands as a backup and why. The tokens it has used, broken down by model, and the sessions it worked on. **Rename** is here too.
 - **Sessions.** With statistics enabled, Claude sessions on this profile, live or ended: project and folder, tokens used (input, output, cache write, cache read), the models, and how tokens divide between your accounts. Live sessions also show status, PID, and running time.
 - **Switching.** Setup health with fix buttons, switch history and failure explanations, the next candidate, watcher controls, and optional statistics and notifications.
@@ -48,6 +49,8 @@ Statistics are optional and enabled by default. They read Claude Code's local co
 Turn on **Account-only privacy mode** under **Switching** to disable session and token statistics. This blocks session metadata and conversation-log reads, discards loaded counts, and hides statistics throughout the dashboard. Direct statistics requests return a disabled result. Account plan usage and switch history stay available.
 
 Claude's records don't say which login produced a reply. Sessioner keeps its own note of every change of the active login and uses the time of each reply to decide which account it belongs to. A session worked on by two accounts is divided between them. Use from before Sessioner started keeping that note is listed as **not attributed** instead of being guessed.
+
+**Refresh usage**, in the page, the tray menu, or `.\sessioner.ps1 accounts`, re-reads every account from Claude right away. Between refreshes, readings are updated on a schedule of one to ten minutes depending on how close an account is to its limit, and each account card shows how old its reading is. A reading taken in the last 15 seconds is reused, and an account that Claude is rate-limiting is left alone until its wait ends.
 
 ## Reset watcher
 

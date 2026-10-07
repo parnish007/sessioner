@@ -105,7 +105,7 @@ class DesktopController:
             return
         with self.server.lock:
             if action == "refresh":
-                self.service.snapshot(refresh=True, source="desktop")
+                self.service.snapshot(refresh=True, source="desktop", force=True)
             elif action == "watcher":
                 watcher = self.service.watcher()
                 watcher.set_enabled(not watcher.status().get("enabled"))

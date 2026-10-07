@@ -1,10 +1,27 @@
 [project]
 name = "sessioner"
 version = "0.1.0"
-description = "Automatic Claude Code account switching with guided terminal setup"
+description = "Multi-account switcher for Claude Code on Windows: automatic switching at usage limits, a tray app, and a local dashboard for plan usage and token statistics"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT"}
+keywords = [
+    "claude", "claude-code", "account-switcher", "multi-account", "usage-limit", "rate-limit",
+    "quota", "token-usage", "windows", "system-tray", "dashboard", "cli", "hooks",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
+    "Topic :: Utilities",
+]
 dependencies = [
     "rich>=14,<16",
     "textual>=8.2.8,<9",
@@ -15,6 +32,11 @@ dependencies = [
 [project.scripts]
 sessioner = "sessioner.cli:main"
 sessioner-accounts = "sessioner.accounts.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/parnish007/sessioner"
+Documentation = "https://github.com/parnish007/sessioner/tree/main/docs"
+Issues = "https://github.com/parnish007/sessioner/issues"
 
 [build-system]
 requires = ["hatchling"]

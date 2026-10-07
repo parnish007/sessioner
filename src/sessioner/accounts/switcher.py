@@ -4952,8 +4952,12 @@ class ClaudeAccountSwitcher:
         fetch: set[str] | None = None,
         *,
         scheduled: bool = False,
+        force: bool = False,
     ) -> dict[str, UsageEntry]:
         """Store-backed usage collection: one :class:`UsageEntry` per account.
+
+        ``force`` is a person's explicit refresh: every account is re-read unless
+        its reading is only seconds old, its login is dead, or it is backing off.
 
         ``fetch=None`` (on-demand callers: ``--list``/``--status``/switch
         strategies, dashboards) makes every account a candidate but respects
@@ -5010,7 +5014,9 @@ class ClaudeAccountSwitcher:
             for num in info_by_num
             if num not in sentinels and (fetch is None or num in fetch)
         ]
-        if fetch is None:
+        if force:
+            claims = store.reserve(requested, identities, respect_plans=False, force=True)
+        elif fetch is None:
             # Repair reset-parked plans written by releases that stopped
             # polling exhausted accounts until their advertised reset. The
             # store recognizes that impossible deadline shape under the same
@@ -5525,6 +5531,7 @@ class ClaudeAccountSwitcher:
         show_token_status: bool = False,
         json_output: bool = False,
         fetch: set[str] | None = None,
+        force: bool = False,
     ) -> dict | None:
         """List all managed accounts.
 
@@ -5549,7 +5556,7 @@ class ClaudeAccountSwitcher:
             return None
 
         accounts_info = self._build_accounts_info()
-        entries = self._collect_usage_entries(accounts_info, fetch=fetch)
+        entries = self._collect_usage_entries(accounts_info, fetch=fetch, force=force)
 
         if json_output:
             return self._build_list_payload(accounts_info, entries)

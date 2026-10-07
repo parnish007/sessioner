@@ -16,6 +16,7 @@ let toastTimer = 0;
 let draftName = null; // what the person has typed in the setup name field, kept across re-renders
 let formError = null;
 let focusId = null; // an input to focus after the next render
+let adding = false; // the "Add another account" steps are open
 let renaming = null; // slot being renamed on its page
 let renameDraft = "";
 let renameError = null;
@@ -159,8 +160,6 @@ const REASONS = {
 };
 const STATUS = { busy: "Busy", idle: "Idle", waiting: "Waiting", unknown: "Running", ended: "Ended" };
 const WATCHER_STATES = { off: "Off", armed: "Watching", waiting: "Waiting for a reset", reset_unknown: "Reset time unknown", blocked: "Blocked", switched: "Switched" };
-const LAMPS = ["Signed in", "Saved", "Backup", "Armed"];
-const LIT = { "no-login": 0, "save-current": 1, "need-second": 2, "pick-active": 3, ready: 3, armed: 4 };
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const nameOf = (account) => account.name || account.email;
@@ -206,6 +205,7 @@ async function run(path, body, { onError, after } = {}) {
     toast(after ? after(result) : result.message);
     draftName = null;
     formError = null;
+    if (path === "/api/add") adding = false;
     renaming = null;
     renameError = null;
     ok = true;
@@ -399,81 +399,109 @@ function jack(account) {
       account.usage.windows.length
         ? el("div", { class: "meters" }, account.usage.windows.slice(0, 2).map(meter))
         : el("div", { class: "note" }, account.usage.note),
+      account.usage.windows.length && account.usage.ageSeconds != null
+        ? el("div", { class: "jack-tokens" }, "Usage checked ", since(receivedAt - account.usage.ageSeconds * 1000), " ago") : "",
       used && used.total ? el("div", { class: "jack-tokens" }, el("b", { title: `${exact(used.total)} tokens` }, amount(used.total)), ` tokens across ${plural(used.sessions, "session")}`) : ""),
     el("div", { class: "jack-act" },
       switchable(account) ? el("button", { type: "button", class: "btn", "data-key": `switch-${account.number}`, onclick: () => switchTo(account.number) }, "Switch to this") : "",
       el("button", { type: "button", class: "btn quiet", "data-key": `details-${account.number}`, onclick: () => go({ kind: "account", number: account.number }) }, "Details")));
 }
 
-function lamps() {
-  const lit = LIT[state.stage] ?? 0;
-  return el("ol", { class: "lamps", "aria-label": `Setup progress: ${lit} of 4 done` },
-    LAMPS.map((label, i) => el("li", { class: `lamp${i < lit ? " lit" : ""}${i === lit ? " now" : ""}`, "aria-current": i === lit ? "step" : false, style: { "--n": i } },
-      el("span", { class: "bulb" }), el("span", { class: "engrave" }, label))));
+// The name field for saving the login Claude is using right now. Shared by first-time setup
+// and by adding another account later.
+function saveLoginForm(buttonLabel) {
+  const s = state;
+  const input = el("input", { type: "text", id: "name", value: draftName ?? s.suggestedName ?? "", maxlength: "64", autocomplete: "off", spellcheck: "false", "aria-label": "Account name", "aria-describedby": "name-help" });
+  input.addEventListener("input", () => { draftName = input.value; });
+  const save = () => run("/api/add", { name: input.value }, { onError: (message) => { formError = message; focusId = "name"; } });
+  input.addEventListener("keydown", (event) => { if (event.key === "Enter") save(); });
+  return [
+    el("p", {}, "Claude is signed in as ", el("strong", {}, s.login), ". Give it a short name you'll recognise, like work or personal. You can rename it later."),
+    el("div", { class: "row" }, input, el("button", { type: "button", class: "btn", "data-key": "save-login", onclick: save }, buttonLabel)),
+    el("p", { class: "fine", id: "name-help" }, "Letters, digits, dots, dashes and underscores."),
+    el("p", { class: "field-error", hidden: !formError, role: "alert" }, formError || ""),
+  ];
 }
 
-// One card that always says the single next thing to do until setup is finished.
+const loginSteps = (different) => el("ol", { class: "steps" },
+  el("li", {}, el("span", {}, "Open Claude Code in a terminal.")),
+  el("li", {}, el("span", {}, "Type ", el("code", {}, "/login"), different ? [" and sign in with a ", el("strong", {}, "different"), " account."] : " and sign in.")),
+  el("li", {}, el("span", {}, "Come back here. This page notices the new login by itself within a few seconds.")));
+
+const checkNow = () => el("button", { type: "button", class: "btn quiet", "data-key": "check", onclick: () => run("/api/refresh", {}) }, "Check now");
+
+// First-time setup: all four steps stay visible, the current one is open, finished ones say what was done.
 function setupCard() {
   const s = state;
-  const card = el("section", { class: "assist" });
-  const eyebrow = (text) => el("span", { class: "engrave" }, text);
-  const put = (tone, ...kids) => { card.classList.add(tone); card.append(...kids); };
-  const check = (label = "Check again") => el("button", { type: "button", class: "btn", "data-key": "check", onclick: () => run("/api/refresh", {}) }, label);
-
-  switch (s.stage) {
-    case "no-claude":
-      put("blocked", eyebrow("Needs attention"), el("h2", {}, "Claude Code isn't available here"),
-        el("p", {}, "Sessioner switches the login Claude Code uses, so Claude Code has to be installed and reachable from the terminal that started Sessioner."),
-        el("div", { class: "row" }, check()));
-      break;
-    case "blocked":
-      put("blocked", eyebrow("Needs attention"), el("h2", {}, "Claude's settings are in the way"),
-        el("p", {}, s.automatic.blocked || "Claude's settings need repair before automatic switching can run."),
-        el("p", {}, "Your saved accounts are safe. Repair the settings file, then check again."),
-        el("div", { class: "row" }, el("code", {}, s.settingsPath), check()));
-      break;
-    case "no-login":
-      put("attention", lamps(), el("h2", {}, "Sign in to Claude first"),
-        el("p", {}, "Sessioner can't find a Claude login yet."),
-        el("ol", { class: "steps" },
-          el("li", {}, el("span", {}, "Open Claude Code in a terminal.")),
-          el("li", {}, el("span", {}, "Type ", el("code", {}, "/login"), " and sign in.")),
-          el("li", {}, el("span", {}, "Come back here and check again."))),
-        el("div", { class: "row" }, copyButton("/login"), check()));
-      break;
-    case "save-current": {
-      const input = el("input", { type: "text", id: "name", value: draftName ?? s.suggestedName ?? "", maxlength: "64", autocomplete: "off", spellcheck: "false", "aria-label": "Account name", "aria-describedby": "name-help" });
-      input.addEventListener("input", () => { draftName = input.value; });
-      const save = () => run("/api/add", { name: input.value }, { onError: (message) => { formError = message; focusId = "name"; } });
-      input.addEventListener("keydown", (event) => { if (event.key === "Enter") save(); });
-      put("attention", lamps(),
-        el("h2", {}, s.accounts.length === 0 ? "Save the login Claude is using" : "Save this new login"),
-        el("p", {}, "Claude is signed in as ", el("strong", {}, s.login), ". Give it a short name you'll recognise, like work or personal. You can rename it later."),
-        el("p", { id: "name-help" }, "Letters, digits, dots, dashes and underscores."),
-        el("div", { class: "row" }, input, el("button", { type: "button", class: "btn", onclick: save }, "Save login")),
-        el("p", { class: "field-error", hidden: !formError, role: "alert" }, formError || ""));
-      break;
-    }
-    case "need-second":
-      put("attention", lamps(), el("h2", {}, "Add a different account"),
-        el("p", {}, "Automatic switching needs a second, different login to switch to."),
-        s.accounts.length && s.login ? el("p", {}, "Right now Claude is still signed in as ", el("strong", {}, s.login), ", which is already saved.") : "",
-        el("ol", { class: "steps" },
-          el("li", {}, el("span", {}, "In Claude Code, type ", el("code", {}, "/login"), ".")),
-          el("li", {}, el("span", {}, "Sign in with a ", el("strong", {}, "different"), " account.")),
-          el("li", {}, el("span", {}, "Come back here and check again."))),
-        el("div", { class: "row" }, copyButton("/login"), check()));
-      break;
-    case "pick-active":
-      put("attention", lamps(), el("h2", {}, "Choose an account that's switched on"),
-        el("p", {}, "The account Claude is using is switched off. Drag the plug to one of your other accounts below, or press its Switch button."));
-      break;
-    default:
-      put("good", lamps(), el("h2", {}, "Turn on automatic switching"),
-        el("p", {}, "Two different accounts are saved. When Claude reports that your usage limit is used up, Sessioner will move the plug to the other account."),
-        el("div", { class: "row" }, el("button", { type: "button", class: "btn", "data-key": "arm", disabled: !s.automatic.canEnable, onclick: () => run("/api/automatic", { enabled: true }) }, "Turn on automatic switching")));
+  if (s.stage === "no-claude" || s.stage === "blocked") {
+    return el("section", { class: "assist blocked" },
+      el("span", { class: "engrave" }, "Needs attention"),
+      el("h2", {}, s.stage === "no-claude" ? "Claude Code isn't available here" : "Claude's settings are in the way"),
+      s.stage === "no-claude"
+        ? el("p", {}, "Sessioner switches the login Claude Code uses, so Claude Code has to be installed and reachable. Install it, sign in once, then check again.")
+        : [el("p", {}, s.automatic.blocked || "Claude's settings need repair before automatic switching can run."),
+           el("p", {}, "Your saved accounts are safe. Repair this file, then check again: ", el("code", {}, s.settingsPath))],
+      el("div", { class: "row" }, checkNow()));
   }
-  return card;
+  if (s.stage === "pick-active") {
+    return el("section", { class: "assist attention" }, el("h2", {}, "Choose an account that's switched on"),
+      el("p", {}, "The account Claude is using is switched off. Drag the plug to one of your other accounts below, or press its Switch button."));
+  }
+  if (s.stage === "save-current" && s.accounts.length >= 2) return newLoginCard();
+
+  const first = s.accounts[0];
+  const at = s.stage === "no-login" ? 0 : s.stage === "save-current" ? (s.accounts.length ? 2 : 1) : s.stage === "need-second" ? 2 : 3;
+  const steps = [
+    { title: "Sign in to Claude Code", done: s.login ? `Signed in as ${s.login}.` : "Signed in.",
+      body: () => [el("p", {}, "Sessioner can't find a Claude login yet."), loginSteps(false), el("div", { class: "row" }, copyButton("/login"), checkNow())] },
+    { title: "Save this account", done: first ? `Saved as ${nameOf(first)}.` : "Saved.",
+      body: () => saveLoginForm("Save account") },
+    { title: "Add a second account", done: `${plural(s.accounts.length, "account")} saved.`,
+      body: () => (s.stage === "save-current"
+        ? [el("p", { class: "found" }, "New login found."), saveLoginForm("Save second account")]
+        : [el("p", {}, "Automatic switching needs a second, different Claude account to move to.",
+             s.login ? [" Claude is still signed in as ", el("strong", {}, s.login), ", which is already saved."] : ""),
+           loginSteps(true), el("div", { class: "row" }, copyButton("/login"), checkNow())]) },
+    { title: "Turn on automatic switching", done: "On.",
+      body: () => [el("p", {}, "Two different accounts are saved. When Claude reports that your usage limit is used up, Sessioner moves the plug to the other account."),
+        el("div", { class: "row" }, el("button", { type: "button", class: "btn", "data-key": "arm", disabled: !s.automatic.canEnable, onclick: () => run("/api/automatic", { enabled: true }) }, "Turn on automatic switching"))] },
+  ];
+  return el("section", { class: "assist attention onboarding", "aria-label": "Set up Sessioner" },
+    el("span", { class: "engrave" }, `Set up · step ${at + 1} of 4`),
+    el("ol", { class: "stepper" }, steps.map((step, i) => el("li", { class: `stage${i < at ? " done" : i === at ? " now" : ""}`, "aria-current": i === at ? "step" : false },
+      el("span", { class: "bulb", "aria-hidden": "true" }, i < at ? "\u2713" : String(i + 1)),
+      el("div", { class: "stage-body" },
+        el(i === at ? "h2" : "h3", {}, step.title),
+        i < at ? el("p", { class: "fine" }, step.done) : i === at ? step.body() : "")))));
+}
+
+// After setup, Claude signed in to a login Sessioner has not saved: offer to save it as another account.
+function newLoginCard() {
+  return el("section", { class: "assist attention" },
+    el("span", { class: "engrave" }, "New login found"),
+    el("h2", {}, "Save this login as another account"),
+    saveLoginForm("Save account"),
+    el("p", { class: "fine" }, "Don't want to save it? Drag the plug to one of your saved accounts below to go back."));
+}
+
+// The empty jack at the end of the bay: how to add one more account, any time after setup.
+function addAccountCard() {
+  const s = state;
+  if (!["ready", "armed", "pick-active"].includes(s.stage)) return ""; // during first-time setup the steps above cover it
+  if (!adding) {
+    return el("div", { class: "add-jack" },
+      el("span", { class: "port empty-port", "aria-hidden": "true" }),
+      el("div", {}, el("strong", {}, "Add another account"), el("p", { class: "fine" }, "Any number of Claude accounts can be saved here.")),
+      el("button", { type: "button", class: "btn quiet", "data-key": "add-account", onclick: () => { adding = true; render({ force: true }); } }, "Add account"));
+  }
+  return el("div", { class: "add-jack open" },
+    el("span", { class: "port empty-port", "aria-hidden": "true" }),
+    el("div", {},
+      el("strong", {}, "Add another account"),
+      loginSteps(true),
+      el("p", { class: "fine" }, "Waiting for a new login. Claude is still signed in as ", el("strong", {}, s.login || "nobody"), ". Signing in changes the login for every open Claude session; you can switch back here afterward."),
+      el("div", { class: "row" }, copyButton("/login", { small: true }), checkNow(),
+        el("button", { type: "button", class: "btn quiet", "data-key": "add-cancel", onclick: () => { adding = false; render({ force: true }); } }, "Cancel"))));
 }
 
 function recoveryNote() {
@@ -565,7 +593,8 @@ function homePage() {
             el("div", {}, el("span", { class: "engrave" }, "Claude Code"),
               el("div", { class: "source-login" }, active ? `signed in as ${active.email}` : s.login ? `signed in as ${s.login} (not saved yet)` : "not signed in"))),
           el("ul", { class: "jacks", id: "jacks" }, s.accounts.map(jack)),
-          s.accounts.length ? "" : el("p", { class: "empty" }, "No saved accounts yet. Follow the step above to save your first one."),
+          s.accounts.length ? "" : el("p", { class: "empty" }, "No saved accounts yet. Follow the steps above to save your first one."),
+          addAccountCard(),
           el("button", { type: "button", class: "plug-handle", id: "plug-handle", "data-key": "plug", hidden: true }))),
       el("aside", { class: "rack" }, autoCard(), sessionsCard(), demoCard())),
   ];
@@ -1261,7 +1290,7 @@ const stable = (value) => JSON.stringify(value, (key, v) => (key === "ageSeconds
 function render({ force = false } = {}) {
   if (!state || !view) return;
   if (drag) { dirty = true; return; } // never pull the bay out from under someone's hand
-  const next = stable([view, formError, renaming, renameError, sessionFilter, sessionsShown, activityShown, tokensAt, tokensError, state]);
+  const next = stable([view, formError, adding, renaming, renameError, sessionFilter, sessionsShown, activityShown, tokensAt, tokensError, state]);
   if (!force && next === signature) return;
   signature = next;
   const key = document.activeElement?.dataset?.key;
@@ -1285,6 +1314,12 @@ function render({ force = false } = {}) {
 }
 
 function adopt(next, { quiet = false } = {}) {
+  // A login Sessioner has not saved just appeared: bring the person to the form that saves it.
+  if (state && next.stage === "save-current" && state.stage !== "save-current") {
+    focusId = "name";
+    adding = false;
+    if (!quiet && view && view.kind !== "home") { view = { kind: "home" }; history.replaceState(null, "", "#home"); }
+  }
   stateVersion += 1;
   const hadStatistics = statisticsEnabled();
   state = next;
@@ -1368,6 +1403,8 @@ document.body.classList.add("boot");
 setTimeout(() => document.body.classList.remove("boot"), 2600);
 setInterval(tickClocks, 1000);
 setInterval(poll, 10000);
+// While the page is waiting for someone to sign in to Claude, look more often so it reacts within seconds.
+setInterval(() => { if (state && (adding || state.stage === "no-login" || state.stage === "need-second")) poll(); }, 3000);
 
 call("/api/state")
   .then((result) => adopt(result.state))

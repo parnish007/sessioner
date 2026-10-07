@@ -2,6 +2,8 @@
   <img src="docs/assets/sessioner-logo.gif" alt="Sessioner: account patch bay for Claude Code" width="720">
 </h1>
 
+**Sessioner is a multi-account switcher for Claude Code on Windows.** When one Claude account hits its usage limit, it switches the saved login to another account that still has room, from a tray app with a local dashboard for plan usage, reset times, token statistics, and switch history.
+
 Save your Claude Code accounts, choose the active login, and turn on account switching when a usage allowance runs out. Keep working in ordinary Claude Code; Claude handles your conversation and context.
 
 ## Get started

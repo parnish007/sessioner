@@ -60,6 +60,8 @@ STALE_OK_S = 300.0  # trusted for switch decisions; older → headroom unknown
 # in flight. A crashed collector waiting 90s remains below the provider-safe
 # polling interval.
 CLAIM_TTL_S = 90.0  # in-flight claim window: skip just-claimed accounts
+# A person pressing Refresh may beat the serve TTL and the poll plan, but never more often than this.
+FORCE_MIN_AGE_S = 15.0
 LEGACY_CLAIM_TTL_S = 10.0  # additive-schema overlap with older collectors
 
 
@@ -1015,6 +1017,7 @@ class UsageStore:
         *,
         respect_plans: bool,
         repair_overslept: bool = False,
+        force: bool = False,
     ) -> dict[str, str]:
         """Atomically win the right to fetch: re-check eligibility and stamp
         a bounded lease in one locked pass, returning slot → fencing id.
@@ -1054,7 +1057,7 @@ class UsageStore:
                 else:
                     assert isinstance(row, dict)
                     if not _row_eligible(
-                        row, now, respect_plans, repair_overslept
+                        row, now, respect_plans, repair_overslept, force
                     ):
                         continue
                 claim_id = uuid.uuid4().hex
@@ -1277,7 +1280,8 @@ def _num_or_none(value: object) -> float | None:
 
 
 def _row_eligible(
-    row: dict, now: float, respect_plans: bool, repair_overslept: bool = False
+    row: dict, now: float, respect_plans: bool, repair_overslept: bool = False,
+    force: bool = False,
 ) -> bool:
     """Fetch eligibility of a stored row, evaluated under the write lock
     (see :meth:`UsageStore.reserve` for the two caller modes)."""
@@ -1296,6 +1300,10 @@ def _row_eligible(
     ):
         return False
     fetched_at = _num_or_none(row.get("fetchedAt"))
+    if force:
+        # An explicit refresh: dead tokens, failure backoff, holds and live claims above
+        # still apply, so this cannot hammer a rate-limited or broken login.
+        return fetched_at is None or (now - fetched_at) > FORCE_MIN_AGE_S
     stale = fetched_at is None or (now - fetched_at) > SERVE_TTL_S
     next_poll_at = _num_or_none(row.get("nextPollAt"))
     poll_due = next_poll_at is not None and now >= next_poll_at

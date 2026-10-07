@@ -142,8 +142,11 @@ class SessionerService:
                 raise busy from exc
             raise SessionerError(f"Could not {operation}.", next_step) from exc
 
-    def snapshot(self, *, refresh: bool = False, source: str = "manual") -> Snapshot:
-        roster = self._call("read saved accounts", lambda: self.switcher.list_accounts(json_output=True, fetch=None if refresh else set()))
+    def snapshot(self, *, refresh: bool = False, source: str = "manual", force: bool = False) -> Snapshot:
+        # `force` is a person pressing Refresh: re-read every account now instead of waiting
+        # for the engine's own schedule. Background refreshes leave the schedule alone.
+        options = {"force": True} if refresh and force else {}
+        roster = self._call("read saved accounts", lambda: self.switcher.list_accounts(json_output=True, fetch=None if refresh else set(), **options))
         if not isinstance(roster, dict) or roster.get("error") or not isinstance(roster.get("accounts"), list):
             raise SessionerError("Could not read saved accounts. Check the account store with sessioner doctor.")
         accounts = roster["accounts"]

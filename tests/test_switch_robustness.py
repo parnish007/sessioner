@@ -147,3 +147,31 @@ def test_watcher_falls_back_to_the_next_candidate_when_the_first_cannot_be_switc
     result = watcher.tick()
     assert result["state"] == "switched" and result["lastSwitchTo"] == 2
     assert ("failed", "3") in engine.calls and ("switch", "2") in engine.calls
+
+
+# ---- refreshing usage ----
+
+def test_pressing_refresh_forces_a_new_reading_but_background_checks_do_not(tmp_path):
+    from sessioner.web import api
+
+    engine = Engine(two_accounts(), login="a@example.com")
+    svc = service(tmp_path, engine)
+    api.build_state(svc)
+    assert ("forced",) not in engine.calls  # opening or polling the page never forces
+    svc.snapshot(refresh=True, source="watcher")
+    assert ("forced",) not in engine.calls  # nor does the watcher
+    api.act(svc, "/api/refresh", {})
+    assert ("forced",) in engine.calls
+
+
+def test_a_forced_reading_still_respects_backoff_claims_and_a_short_floor():
+    from sessioner.accounts.usage_store import FORCE_MIN_AGE_S, _row_eligible
+
+    now = 1_000_000.0
+    fresh = {"fetchedAt": now - 60, "nextPollAt": now + 500}
+    assert not _row_eligible(dict(fresh), now, True)  # the old behaviour: served from cache
+    assert _row_eligible(dict(fresh), now, False, False, True)  # pressing Refresh re-reads it
+    assert not _row_eligible({"fetchedAt": now - FORCE_MIN_AGE_S + 1}, now, False, False, True)
+    assert not _row_eligible({**fresh, "backoffUntil": now + 30}, now, False, False, True)
+    assert not _row_eligible({**fresh, "claimUntil": now + 30, "lastAttemptAt": now - 1}, now, False, False, True)
+    assert not _row_eligible({**fresh, "authDeadStrikes": 99}, now, False, False, True)

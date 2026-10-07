@@ -46,9 +46,11 @@ class Engine:
         self.login = login
         self.calls = []
 
-    def list_accounts(self, *, json_output, fetch=None):
+    def list_accounts(self, *, json_output, fetch=None, force=False):
         assert json_output is True
         self.calls.append(("list", fetch))
+        if force:
+            self.calls.append(("forced",))
         rows = deepcopy(self.rows)
         active = None
         for account in rows:
