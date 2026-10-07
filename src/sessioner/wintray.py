@@ -23,6 +23,7 @@ UPDATE_MESSAGE = WM_APP + 2
 NOTICE_MESSAGE = WM_APP + 3
 PREFERENCES_MESSAGE = WM_APP + 4
 ACTIVATE_MESSAGE = "Sessioner.Desktop.Activate.v1"
+ASFW_ANY = 0xFFFFFFFF
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,7 @@ class _API:
             (self.user.RegisterWindowMessageW, [wintypes.LPCWSTR], wintypes.UINT),
             (self.user.FindWindowW, [wintypes.LPCWSTR, wintypes.LPCWSTR], wintypes.HWND),
             (self.user.PostMessageW, [wintypes.HWND, wintypes.UINT, ctypes.c_size_t, ctypes.c_ssize_t], wintypes.BOOL),
+            (self.user.AllowSetForegroundWindow, [wintypes.DWORD], wintypes.BOOL),
             (self.user.RegisterClassW, [ctypes.POINTER(WindowClass)], wintypes.WORD),
             (self.user.UnregisterClassW, [wintypes.LPCWSTR, wintypes.HINSTANCE], wintypes.BOOL),
             (self.user.CreateWindowExW, [wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD,
@@ -117,6 +119,10 @@ def wake_for(state_dir: Path, *, open_browser: bool = False) -> bool:
         return False
     api = _API()
     window = api.user.FindWindowW(f"SessionerTray-{profile_key(state_dir)}", None)
+    if window and open_browser:
+        # The person launched this process, so it may bring windows forward; the running tray
+        # app may not. Hand that right over, or the dashboard opens behind other windows.
+        api.user.AllowSetForegroundWindow(ASFW_ANY)
     return bool(window and api.user.PostMessageW(window, api.activate_message, int(open_browser), 0))
 
 
