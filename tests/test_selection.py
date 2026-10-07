@@ -71,7 +71,7 @@ def test_scoped_limit_can_make_an_account_ineligible():
 
 
 def test_stale_disabled_and_unknown_usage_are_not_eligible():
-    assert account_eligibility(row(1, "a", usage=usage(), age=301), now=NOW).reason == "stale"
+    assert account_eligibility(row(1, "a", usage=usage(), age=601), now=NOW).reason == "stale"
     assert account_eligibility(row(2, "b", usage=usage(), disabled=True), now=NOW).reason == "disabled"
     assert account_eligibility(row(3, "c"), now=NOW).reason == "usage-unavailable"
 

@@ -202,6 +202,15 @@ def _desktop_state(service: SessionerService) -> dict:
     }
 
 
+_HOOK_STATUSES = {"switched", "blocked", "ignored", "unreadable"}
+
+
+def _hook_state(service: SessionerService) -> dict:
+    raw = service.hook_last_call()
+    status = raw.get("status")
+    return {"lastCalledAt": _epoch_text(raw.get("at")), "lastStatus": status if status in _HOOK_STATUSES else None}
+
+
 def _selection_payload(result) -> dict:
     return {
         "nextAccount": result.target,
@@ -271,6 +280,7 @@ def build_state(service: SessionerService, *, refresh: bool = False) -> dict:
         "selection": _selection_payload(selection),
         "watcher": watcher,
         "desktop": desktop,
+        "hook": _hook_state(service),
         "preferences": preferences,
         "activity": service.activity(),
         "health": build_health(state, selection, watcher, desktop),

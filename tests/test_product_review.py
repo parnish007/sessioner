@@ -88,8 +88,8 @@ def run(monkeypatch, arguments, service, reader, *, interactive=True):
 
 @pytest.mark.parametrize("changes,expected", [
     ({"usageAgeSeconds": 0}, True),
-    ({"usageAgeSeconds": 300}, True),
-    ({"usageAgeSeconds": 300.01}, False),
+    ({"usageAgeSeconds": 600}, True),
+    ({"usageAgeSeconds": 600.01}, False),
     ({"usageAgeSeconds": -1}, False),
     ({"usageAgeSeconds": True}, False),
     ({"usageAgeSeconds": float("nan")}, False),

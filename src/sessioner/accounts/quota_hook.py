@@ -26,7 +26,8 @@ from sessioner.accounts.locking import FileLock
 
 
 MAX_INPUT_BYTES = 1024 * 1024
-USAGE_MAX_AGE_SECONDS = 300
+USAGE_MAX_AGE_SECONDS = 300  # the active account is re-read every minute near its limit
+BACKUP_USAGE_MAX_AGE_SECONDS = 600  # idle accounts are re-read every 5 to 10 minutes
 FAILED_ACCOUNT_COOLDOWN_SECONDS = 300
 _HOOK_ARGS = ["-m", "sessioner.accounts.quota_hook", "run"]
 _QUOTA_MESSAGE = re.compile(
@@ -89,7 +90,7 @@ def _available(account: dict) -> bool:
         account.get("disabled")
         or account.get("usageStatus") != "ok"
         or not _number(age)
-        or not 0 <= age <= USAGE_MAX_AGE_SECONDS
+        or not 0 <= age <= BACKUP_USAGE_MAX_AGE_SECONDS
     ):
         return False
     windows = _windows(account)
@@ -337,19 +338,49 @@ def rotate_account(event: dict, switcher=None, now: float | None = None) -> dict
         return {"status": "blocked"}
 
 
+TRACE_FILE = "sessioner-hook-last.json"
+_TRACE_STATUSES = frozenset({"switched", "blocked", "ignored", "unreadable"})
+
+
+def note_call(backup_dir: Path, status: str, *, now: float | None = None) -> None:
+    """Remember when Claude last called the hook and how it ended. No account or message data."""
+    try:
+        state = {"at": time.time() if now is None else now, "status": status if status in _TRACE_STATUSES else "unreadable"}
+        _atomic_write(Path(backup_dir) / TRACE_FILE, (json.dumps(state) + "\n").encode("utf-8"))
+    except OSError:
+        pass
+
+
+def last_call(backup_dir: Path) -> dict:
+    """{"at": epoch or None, "status": str or None}; damaged or missing state reads as never called."""
+    try:
+        state = json.loads((Path(backup_dir) / TRACE_FILE).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return {"at": None, "status": None}
+    if not isinstance(state, dict) or not _number(state.get("at")) or state["at"] <= 0 or state.get("status") not in _TRACE_STATUSES:
+        return {"at": None, "status": None}
+    return {"at": float(state["at"]), "status": state["status"]}
+
+
 def _run_hook() -> int:
+    status = "unreadable"
     try:
         incoming = sys.stdin.buffer.read(MAX_INPUT_BYTES + 1)
         if len(incoming) > MAX_INPUT_BYTES:
             raise ValueError("Hook input exceeds its size limit")
         event = json.loads(incoming)
         result = rotate_account(event)
+        status = result["status"]
         if result["status"] == "switched":
             print(f"Sessioner: account {result['from']} switched to {result['to']}.", file=sys.stderr)
         elif result["status"] == "blocked":
             print("Sessioner: account switch blocked; check saved accounts and available usage.", file=sys.stderr)
     except Exception:
         print("Sessioner: account hook input could not be processed.", file=sys.stderr)
+    try:
+        note_call(paths.get_backup_root(), status)
+    except Exception:
+        pass
     # StopFailure hooks observe a failed request; their output cannot retry it.
     return 0
 

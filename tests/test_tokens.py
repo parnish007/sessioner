@@ -198,3 +198,33 @@ def test_the_hook_records_the_login_it_switched_to(tmp_path):
     engine = three(tmp_path)
     assert quota_hook.rotate_account(EVENT, engine, now=NOW.timestamp())["status"] == "switched"
     assert history.read(tmp_path / history.FILE) == [(NOW.timestamp(), "u2@example.com", 2)]
+
+
+def test_the_hook_notes_each_call_without_account_or_message_data(tmp_path, monkeypatch):
+    import io, sys
+    from sessioner.accounts import paths, quota_hook
+
+    assert quota_hook.last_call(tmp_path) == {"at": None, "status": None}
+    monkeypatch.setattr(paths, "get_backup_root", lambda: tmp_path)
+    monkeypatch.setattr(sys, "stdin", type("In", (), {"buffer": io.BytesIO(b'{"hook_event_name": "Stop", "secret": "do not keep"}')})())
+    assert quota_hook._run_hook() == 0
+    seen = quota_hook.last_call(tmp_path)
+    assert seen["status"] == "ignored" and seen["at"] > 0
+    assert "secret" not in (tmp_path / quota_hook.TRACE_FILE).read_text()
+    monkeypatch.setattr(sys, "stdin", type("In", (), {"buffer": io.BytesIO(b"not json")})())
+    quota_hook._run_hook()
+    assert quota_hook.last_call(tmp_path)["status"] == "unreadable"
+    (tmp_path / quota_hook.TRACE_FILE).write_text('{"at": "soon", "status": "x"}')
+    assert quota_hook.last_call(tmp_path) == {"at": None, "status": None}
+
+
+def test_the_page_reports_the_last_hook_call(tmp_path):
+    from sessioner.accounts import quota_hook
+
+    api = product_module("sessioner.web.api")
+    engine = Engine(accounts(), login="a@example.com")
+    engine.backup_dir = tmp_path / "store"
+    svc = service(tmp_path, engine)
+    assert api.build_state(svc)["hook"] == {"lastCalledAt": None, "lastStatus": None}
+    quota_hook.note_call(engine.backup_dir, "switched", now=T0)
+    assert api.build_state(svc)["hook"]["lastStatus"] == "switched"

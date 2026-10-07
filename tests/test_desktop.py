@@ -159,7 +159,7 @@ def test_next_reset_ignores_disabled_and_stale_accounts(tmp_path):
     product, service, tray, _, _ = controller(tmp_path)
     future = datetime.fromtimestamp(time.time() + 3600, timezone.utc).isoformat()
     service.rows[0]["disabled"] = True
-    service.rows[1]["usageAgeSeconds"] = 500
+    service.rows[1]["usageAgeSeconds"] = 700
     for row in service.rows:
         row["usage"]["fiveHour"]["resetsAt"] = future
     product.check()

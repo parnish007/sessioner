@@ -181,7 +181,7 @@ function standing(account) {
   switch (usage.eligibilityReason) {
     case "available": return { tone: "ok", text: "Has room", why: `${Math.round(usage.headroom)}% headroom on its busiest window.` };
     case "exhausted": return { tone: "alert", text: "At limit", why: usage.recoveryAt ? "It recovers when its last limiting window resets." : "No recovery time is known." };
-    case "stale": return { tone: "warn", text: "Usage out of date", why: "Not checked in the last 5 minutes. Refresh before relying on it." };
+    case "stale": return { tone: "warn", text: "Usage out of date", why: "Not checked in the last 10 minutes. Refresh before relying on it." };
     default: return { tone: "warn", text: "Usage unknown", why: usage.note || "Its usage can't be read right now." };
   }
 }
@@ -485,7 +485,7 @@ function recoveryNote() {
       ? ["Every other account is at its limit. The earliest recovery is in ", until(s.selection.earliestResetAt), ` (${when(s.selection.earliestResetAt)}).`]
       : s.selection.resetUnknown
         ? "Every other account is at its limit and none reports a reset time. Sessioner won't guess; check /usage in Claude."
-        : ["Sessioner only switches to an account whose usage was checked in the last five minutes and still has room. ", refreshButton("Refresh usage now")]));
+        : ["Sessioner only switches to an account whose usage was checked in the last ten minutes and still has room. ", refreshButton("Refresh usage now")]));
 }
 
 function autoCard() {
@@ -1085,6 +1085,7 @@ const EVENT_REASONS = {
   "credentials-unavailable": "The saved login could not be read. Check the credential store and retry.",
   "quota-recovered": "Fresh usage confirms there is room again.",
 };
+const HOOK_OUTCOMES = { switched: "switched accounts", blocked: "could not switch", ignored: "not a usage limit, nothing to do", unreadable: "the call could not be read" };
 const EVENT_SOURCES = { manual: "You", hook: "Limit hook", watcher: "Reset watcher", desktop: "Tray" };
 
 function eventAccount(number, fallback) {
@@ -1233,6 +1234,9 @@ function switchingPage() {
           el("h3", {}, "Right now"),
           el("dl", { class: "facts" },
             el("dt", {}, "Hook"), el("dd", {}, hook),
+            el("dt", {}, "Last hook call"), el("dd", {}, s.hook?.lastCalledAt
+              ? `${when(s.hook.lastCalledAt)}: ${HOOK_OUTCOMES[s.hook.lastStatus] || "outcome unknown"}`
+              : "Claude has not called it yet. The reset watcher covers limits Claude doesn't report to hooks."),
             el("dt", {}, "Applies to"), el("dd", {}, liveSessionCount() ? `The whole Claude profile, shared by ${plural(liveSessionCount(), "live session")}` : "The whole Claude profile"),
             el("dt", {}, "Active login"), el("dd", {}, active ? active.label : (s.login ? `${s.login} (not saved)` : "None")),
             el("dt", {}, "Next candidate"), el("dd", {}, next ? `${nameOf(next)}, because ${REASONS[s.selection.reason] || "it has room"}` : `None, because ${REASONS[s.selection.reason] || "no other account is ready"}`),

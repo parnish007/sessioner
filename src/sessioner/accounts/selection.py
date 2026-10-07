@@ -13,7 +13,9 @@ import math
 from typing import Iterable
 
 
-USAGE_MAX_AGE_SECONDS = 300
+# The account engine re-reads an idle account every 5 to 10 minutes. An idle backup's usage can only
+# fall (or reset) between readings, so a reading up to 10 minutes old is still safe to switch to.
+USAGE_MAX_AGE_SECONDS = 600
 
 
 def _number(value: object) -> bool:

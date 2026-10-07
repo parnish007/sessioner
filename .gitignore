@@ -35,6 +35,7 @@ output/playwright/
 sessioner-hook-state.json
 sessioner-watcher.json
 sessioner-account-history.jsonl
+sessioner-hook-last.json
 sessioner-preferences.json
 sessioner-activity.json
 sessioner-quota-observations.json

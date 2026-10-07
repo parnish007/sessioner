@@ -34,7 +34,7 @@ The PowerShell command works without activating an environment or changing your 
 
 ## How switching works
 
-When Claude reports a rate limit, Sessioner checks whether the current account's usage allowance is used up. It changes the active login only when another enabled, different saved account has fresh usage (checked within five minutes) with room on every window. When several qualify, it prefers the one whose limits reset soonest, then the one with the most room, then the first saved. Unknown or malformed reset times are shown as unknown and never drive a switch.
+When Claude reports a rate limit, Sessioner checks whether the current account's usage allowance is used up. It changes the active login only when another enabled, different saved account has fresh usage (checked within ten minutes) with room on every window. When several qualify, it prefers the one whose limits reset soonest, then the one with the most room, then the first saved. Unknown or malformed reset times are shown as unknown and never drive a switch.
 
 An optional reset watcher can re-check usage on a timer and switch for you. Enable it in **Switching**, then keep the desktop app running. Closing the browser leaves the tray and enabled watcher running; **Quit** stops them. The tray shows the active account, next reset, and watcher status, and lets you switch accounts or reopen the dashboard. Notifications report switches, exhaustion, recovered quota, and login problems. Browser-only mode (`.\sessioner.ps1 ui`) and the terminal watcher (`.\sessioner.ps1 watch`) remain available.
 

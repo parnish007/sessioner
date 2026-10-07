@@ -80,3 +80,7 @@ Ordinary Claude terminals share the active login. Use one automatic account-swit
 ## Report a problem
 
 Include the OS, Claude Code version, Sessioner version, the command you ran, and the relevant error or doctor result. State whether the issue happened during setup, saving a login, turning switching on, or switching accounts. Redact account identities as needed and leave credential files, tokens, and account exports out of the report.
+
+## A limit was reached but the hook did nothing
+
+Open **Switching** and read **Last hook call** under *Right now*. If it says Claude has not called the hook, Claude did not report that limit to hooks; this happens when Claude stops a request itself because it already knows the allowance is used up. The reset watcher covers that case: turn it on in **Switching** and keep the tray app running. It notices the used-up account within about a minute and switches. After any switch, retry in Claude, and use `claude --resume` after a restart if the open conversation keeps the old login.

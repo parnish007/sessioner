@@ -16,7 +16,7 @@ from typing import Callable
 
 from sessioner.accounts import history, paths, process_detection, quota_hook
 from sessioner.accounts.models import normalize_alias
-from sessioner.accounts.selection import select_backup
+from sessioner.accounts.selection import USAGE_MAX_AGE_SECONDS, select_backup
 
 
 LOCK_RETRIES = 3
@@ -46,7 +46,7 @@ def usage_available(account: dict) -> bool:
     """The hook requires fresh measured quota, including any model limits."""
     age = account.get("usageAgeSeconds")
     usage = account.get("usage")
-    if account.get("disabled") or account.get("usageStatus") != "ok" or not _finite(age) or not 0 <= age <= 300:
+    if account.get("disabled") or account.get("usageStatus") != "ok" or not _finite(age) or not 0 <= age <= USAGE_MAX_AGE_SECONDS:
         return False
     if not isinstance(usage, dict):
         return False
@@ -217,6 +217,10 @@ class SessionerService:
         from sessioner.activity import FILE, ActivityStore
 
         return ActivityStore(self.state_dir / FILE).read(limit=limit)
+
+    def hook_last_call(self) -> dict:
+        """When Claude last called the limit hook, and how that call ended."""
+        return quota_hook.last_call(self.state_dir)
 
     def exhausted_slots(self) -> list[int]:
         from sessioner.activity import FILE, ActivityStore
