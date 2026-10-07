@@ -332,52 +332,11 @@ body.dragging .jack:not(.active):not(.disabled) .port { border-color: var(--cabl
 .switch[aria-checked="true"]::after { transform: translateX(32px); background: #16202b; }
 .switch:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* The ten-second story: a terminal hits its limit, the cord moves, you carry on. */
-.demo-card { padding: 14px; }
-.demo-card .fine { padding: 10px 8px 2px; }
-.demo { display: grid; grid-template-columns: minmax(0, 1fr) 132px; align-items: center; gap: 4px; }
-.term { background: #141b21; color: #dfe6df; border-radius: 8px; padding: 0 12px 12px; min-height: 148px; font: 500 12.5px/1.75 var(--mono); overflow: hidden; }
-.term-bar { display: flex; align-items: center; gap: 5px; height: 24px; margin: 0 -12px 6px; padding: 0 10px; background: #1e2830; color: #7f8c96; font-size: 11px; }
-.term-bar i { width: 7px; height: 7px; border-radius: 50%; background: #3a4852; }
-.term-bar span { margin-left: 6px; }
-.t { margin: 0; white-space: nowrap; opacity: 0; animation: 10s linear infinite; width: max-content; max-width: 100%; }
-.t b { color: #7f8c96; font-weight: 500; }
-.t1 { animation-name: d-type1; }
-.t2 { animation-name: d-work; color: #9aa7b0; }
-.t3 { animation-name: d-limit; color: #ff8a78; }
-.t4 { animation-name: d-switched; color: #9fb0ff; }
-.t5 { animation-name: d-type2; }
-.t5 em { font-style: normal; color: #f4b73a; margin-left: 10px; font-family: var(--label); letter-spacing: 0.08em; text-transform: uppercase; font-size: 11px; }
-@keyframes d-type1 {
-  0%, 3% { opacity: 0; clip-path: inset(0 100% 0 0); }
-  4% { opacity: 1; clip-path: inset(0 100% 0 0); animation-timing-function: steps(22, end); }
-  14%, 94% { opacity: 1; clip-path: inset(0 0 0 0); }
-  100% { opacity: 0; clip-path: inset(0 0 0 0); }
-}
-@keyframes d-work { 0%, 15% { opacity: 0; } 16%, 30% { opacity: 1; } 33%, 94% { opacity: 0.45; } 100% { opacity: 0; } }
-@keyframes d-limit { 0%, 31% { opacity: 0; } 33%, 94% { opacity: 1; } 100% { opacity: 0; } }
-@keyframes d-switched { 0%, 49% { opacity: 0; } 52%, 94% { opacity: 1; } 100% { opacity: 0; } }
-@keyframes d-type2 {
-  0%, 61% { opacity: 0; clip-path: inset(0 100% 0 0); }
-  62% { opacity: 1; clip-path: inset(0 100% 0 0); animation-timing-function: steps(18, end); }
-  74%, 94% { opacity: 1; clip-path: inset(0 0 0 0); }
-  100% { opacity: 0; clip-path: inset(0 0 0 0); }
-}
-.demo-bay { width: 132px; height: 132px; }
-.d-cord { stroke: var(--cable); stroke-width: 7; stroke-linecap: round; transform-box: view-box; transform-origin: 20px 75px; transform: rotate(-28.07deg); animation: d-cord 10s ease-in-out infinite; }
-.d-socket, .d-jack { fill: var(--panel); stroke: var(--ink); stroke-width: 3; }
-.d-a { animation: d-a 10s linear infinite; }
-.d-b { animation: d-b 10s linear infinite; }
-.d-label { font: 600 10px var(--label); letter-spacing: 0.14em; fill: var(--ink-soft); }
-@keyframes d-cord {
-  0%, 40% { transform: rotate(-28.07deg); }
-  46% { transform: rotate(32deg); }
-  49% { transform: rotate(26deg); }
-  52%, 95% { transform: rotate(28.07deg); }
-  100% { transform: rotate(-28.07deg); }
-}
-@keyframes d-a { 0%, 31% { fill: var(--lamp); } 33%, 44% { fill: var(--alert); } 47%, 97% { fill: var(--panel); } 100% { fill: var(--lamp); } }
-@keyframes d-b { 0%, 46% { fill: var(--panel); } 48%, 95% { fill: var(--lamp); } 100% { fill: var(--panel); } }
+/* The animated logo. */
+.demo-card { padding: 0; overflow: hidden; background: var(--panel); }
+.demo-card picture { display: block; }
+.logo-gif { display: block; width: 100%; height: auto; }
+.demo-card .fine { padding: 12px 18px 14px; background: var(--plate); border-top: 1.5px solid var(--plate-edge); }
 
 /* Inside an account, and the other pages */
 .back { justify-self: start; margin-bottom: -12px; font: 600 15px/1 var(--label); letter-spacing: 0.04em; text-decoration: none; color: var(--ink-soft); padding: 8px 0; }
@@ -556,18 +515,11 @@ a.acct-total:hover { border-color: var(--ink); }
   .bay-grid::before { width: 28px; left: 3px; }
   .session { grid-template-columns: minmax(0, 1fr); }
   .s-tokens, .s-chips, .s-time { grid-column: 1; grid-row: auto; text-align: left; }
-  .demo { grid-template-columns: minmax(0, 1fr); }
-  .demo-bay { justify-self: center; }
   .models th:nth-child(n+3):nth-child(-n+6), .models td:nth-child(n+3):nth-child(-n+6) { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .switch::after, .toast, .jack, .plug-handle::after { transition: none; }
   .port.flash, .lamp.now .bulb, .boot .lamp.lit .bulb, .boot .seg.on, body.dragging .jack .port { animation: none; }
-  .t, .d-cord, .d-a, .d-b { animation: none; }
-  .t { opacity: 1; }
-  .t2 { opacity: 0.45; }
-  .d-cord { transform: rotate(28.07deg); }
-  .d-b { fill: var(--lamp); }
 }
 
 /* First-time setup: four stages, all visible, the current one open. */

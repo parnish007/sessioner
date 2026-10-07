@@ -234,3 +234,10 @@ def test_token_report_needs_the_token_and_answers_without_message_text(running):
     status, data = client.request("GET", "/api/tokens")
     report = json.loads(data)["tokens"]
     assert status == 200 and report["available"] is True and report["totals"]["total"] == 0
+
+
+def test_the_animated_logo_is_served_for_both_themes(running):
+    client, _ = running
+    for name in ("/logo-light.gif", "/logo-dark.gif"):
+        status, data = client.request("GET", name, token=False)
+        assert status == 200 and data[:6] in (b"GIF89a", b"GIF87a")

@@ -21,7 +21,10 @@ from sessioner.service import SessionerError
 from sessioner.web import api
 
 STATIC = Path(__file__).parent / "static"
-ASSETS = {"/app.css": "text/css; charset=utf-8", "/app.js": "text/javascript; charset=utf-8"}
+ASSETS = {
+    "/app.css": "text/css; charset=utf-8", "/app.js": "text/javascript; charset=utf-8",
+    "/logo-light.gif": "image/gif", "/logo-dark.gif": "image/gif",
+}
 MAX_BODY = 16 * 1024
 DRAIN_LIMIT = 1024 * 1024  # larger refused bodies are not read at all
 COOKIE = "sessioner-launch"

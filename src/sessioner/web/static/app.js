@@ -534,26 +534,17 @@ function autoCard() {
       el("a", { href: "#switching", onclick: (event) => { event.preventDefault(); go({ kind: "switching" }); } }, "How switching works")));
 }
 
-// The whole product in ten seconds: a terminal hits its limit, the cord moves, you carry on.
+// The animated logo: a terminal reaches its limit, the cord moves to the next account, you carry on.
+// Built once and reused, so re-rendering the page never restarts or re-downloads the animation.
+let logoNode = null;
 function demoCard() {
-  const line = (cls, ...kids) => el("p", { class: `t ${cls}` }, kids);
-  return el("section", { class: "demo-card" },
-    el("div", { class: "demo", "aria-hidden": "true" },
-      el("div", { class: "term" },
-        el("div", { class: "term-bar" }, el("i", {}), el("i", {}), el("i", {}), el("span", {}, "claude")),
-        line("t1", el("b", {}, "> "), "fix the failing parser test"),
-        line("t2", "working…"),
-        line("t3", "usage limit reached"),
-        line("t4", "sessioner: work → home"),
-        line("t5", el("b", {}, "> "), "continue", el("em", {}, "you retry"))),
-      svgNode("svg", { class: "demo-bay", viewBox: "0 0 150 150" },
-        svgNode("line", { class: "d-cord", x1: 20, y1: 75, x2: 105, y2: 75 }),
-        svgNode("circle", { class: "d-socket", cx: 20, cy: 75, r: 9 }),
-        svgNode("circle", { class: "d-jack d-a", cx: 95, cy: 35, r: 10 }),
-        svgNode("circle", { class: "d-jack d-b", cx: 95, cy: 115, r: 10 }),
-        svgNode("text", { class: "d-label", x: 112, y: 39 }, "WORK"),
-        svgNode("text", { class: "d-label", x: 112, y: 119 }, "HOME"))),
+  logoNode ||= el("section", { class: "demo-card" },
+    el("picture", {},
+      el("source", { srcset: "/logo-dark.gif", media: "(prefers-color-scheme: dark)" }),
+      el("img", { class: "logo-gif", src: "/logo-light.gif", width: "880", height: "300", decoding: "async",
+        alt: "Sessioner logo: a terminal reaches its usage limit, the patch cord moves from the work account to the home account, and you type continue." })),
     el("p", { class: "fine" }, "When Claude says the limit is used up, Sessioner moves the login to an account with room. Your conversation stays in Claude; you retry there."));
+  return logoNode;
 }
 
 function sessionsCard() {
@@ -596,7 +587,7 @@ function homePage() {
           s.accounts.length ? "" : el("p", { class: "empty" }, "No saved accounts yet. Follow the steps above to save your first one."),
           addAccountCard(),
           el("button", { type: "button", class: "plug-handle", id: "plug-handle", "data-key": "plug", hidden: true }))),
-      el("aside", { class: "rack" }, autoCard(), sessionsCard(), demoCard())),
+      el("aside", { class: "rack" }, demoCard(), autoCard(), sessionsCard())),
   ];
 }
 
